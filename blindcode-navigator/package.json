@@ -1,0 +1,84 @@
+{
+  "name": "blindcode-navigator",
+  "displayName": "blindcode-navigator",
+  "description": "AST-based audio navigation and sonification for blind Java programming beginners.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.118.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:java"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "blindcode-navigator.helloWorld",
+        "title": "Hello World"
+      },
+      {
+        "command": "blindcode-navigator.navigateToParent",
+        "title": "BCNav: Navigate to Parent Node"
+      },
+      {
+        "command": "blindcode-navigator.navigateToFirstChild",
+        "title": "BCNav: Navigate to First Child Node"
+      },
+      {
+        "command": "blindcode-navigator.navigateToNextSibling",
+        "title": "BCNav: Navigate to Next Sibling Node"
+      },
+      {
+        "command": "blindcode-navigator.navigateToPrevSibling",
+        "title": "BCNav: Navigate to Previous Sibling Node"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "blindcode-navigator.navigateToParent",
+        "key": "alt+up",
+        "when": "editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.navigateToFirstChild",
+        "key": "alt+down",
+        "when": "editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.navigateToNextSibling",
+        "key": "alt+right",
+        "when": "editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.navigateToPrevSibling",
+        "key": "alt+left",
+        "when": "editorTextFocus && editorLangId == 'java'"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.19.17",
+    "@types/vscode": "^1.118.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.39.3",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1"
+  },
+  "dependencies": {
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-java": "^0.23.5"
+  }
+}
