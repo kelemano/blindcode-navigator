@@ -5,7 +5,7 @@ import {
     navigateToFirstChild,
     navigateToNextSibling,
     navigateToPrevSibling,
-} from './navigator';
+} from './editorNavigation';
 
 const DEBOUNCE_MS = 300;
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;

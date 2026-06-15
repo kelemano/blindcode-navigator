@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Compiled output
+out/
+
+# Packaged extension
+*.vsix
+
+# Test runner cache
+.vscode-test/
+
+# macOS metadata
+.DS_Store
+
+# Thesis material & internal docs — must NOT appear on GitHub
+docs/
+M*_thesis.md
+M*_stepbystep.md
+blindcode-navigator/docs/dev-log/
+blindcode-navigator/docs/thesis-material/

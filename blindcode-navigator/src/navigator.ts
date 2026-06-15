@@ -1,60 +1,52 @@
-import * as vscode from 'vscode';
-import { getAST, getNamedNodeAtCursor } from './parser';
-import Parser = require('tree-sitter');
+import type Parser = require('tree-sitter');
 
-function moveToNode(editor: vscode.TextEditor, node: Parser.SyntaxNode): void {
-    const pos = new vscode.Position(
-        node.startPosition.row,
-        node.startPosition.column
-    );
-    editor.selection = new vscode.Selection(pos, pos);
-    editor.revealRange(
-        new vscode.Range(pos, pos),
-        vscode.TextEditorRevealType.InCenterIfOutsideViewport
-    );
-}
+/**
+ * Reine AST-Traversal-Logik (Komponente "Navigator", siehe Kap. 4.1).
+ *
+ * Diese Funktionen kennen weder VS Code noch den Editor. Sie nehmen einen
+ * tree-sitter-Knoten entgegen und liefern den Zielknoten der jeweiligen
+ * Navigationsrichtung oder `null`, wenn es kein Ziel gibt (Edge Case).
+ *
+ * Die strikte Trennung von der UI (separation of concerns) macht diese Logik
+ * ohne laufende VS-Code-Instanz unit-testbar (M2 Definition of Done).
+ */
 
-function currentNode(editor: vscode.TextEditor): Parser.SyntaxNode {
-    const tree = getAST(editor.document);
-    return getNamedNodeAtCursor(tree, editor.selection.active);
-}
+/** Knotentyp der tree-sitter-java-Wurzel. */
+const ROOT_TYPE = 'program';
 
-export function navigateToParent(editor: vscode.TextEditor): void {
-    const node = currentNode(editor);
+/**
+ * Elternknoten ("hoch im Baum", Alt+Up).
+ * Liefert `null`, wenn der Knoten bereits auf oberster Ebene liegt, d. h. wenn
+ * es keinen Elternknoten gibt oder der Elternknoten die Programmwurzel ist.
+ */
+export function findParent(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
     const parent = node.parent;
-    if (!parent || parent.type === 'program') {
-        vscode.window.showInformationMessage('Oberste Ebene erreicht');
-        return;
+    if (!parent || parent.type === ROOT_TYPE) {
+        return null;
     }
-    moveToNode(editor, parent);
+    return parent;
 }
 
-export function navigateToFirstChild(editor: vscode.TextEditor): void {
-    const node = currentNode(editor);
-    const child = node.firstNamedChild;
-    if (!child) {
-        vscode.window.showInformationMessage('Kein untergeordneter Block');
-        return;
-    }
-    moveToNode(editor, child);
+/**
+ * Erster benannter Kindknoten ("rein in den Block", Alt+Down).
+ * Liefert `null` bei einem Blattknoten ohne benannte Kinder.
+ */
+export function findFirstChild(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
+    return node.firstNamedChild ?? null;
 }
 
-export function navigateToNextSibling(editor: vscode.TextEditor): void {
-    const node = currentNode(editor);
-    const sibling = node.nextNamedSibling;
-    if (!sibling) {
-        vscode.window.showInformationMessage('Kein weiterer Block auf dieser Ebene');
-        return;
-    }
-    moveToNode(editor, sibling);
+/**
+ * Nächster benannter Geschwisterknoten ("weiter auf gleicher Ebene", Alt+Right).
+ * Liefert `null`, wenn es kein weiteres Geschwister gibt.
+ */
+export function findNextSibling(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
+    return node.nextNamedSibling ?? null;
 }
 
-export function navigateToPrevSibling(editor: vscode.TextEditor): void {
-    const node = currentNode(editor);
-    const sibling = node.previousNamedSibling;
-    if (!sibling) {
-        vscode.window.showInformationMessage('Kein weiterer Block auf dieser Ebene');
-        return;
-    }
-    moveToNode(editor, sibling);
+/**
+ * Vorheriger benannter Geschwisterknoten ("zurück auf gleicher Ebene", Alt+Left).
+ * Liefert `null`, wenn es kein vorheriges Geschwister gibt.
+ */
+export function findPrevSibling(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
+    return node.previousNamedSibling ?? null;
 }
