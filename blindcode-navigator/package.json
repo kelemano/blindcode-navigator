@@ -14,6 +14,21 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "BlindCode Navigator",
+      "properties": {
+        "blindcode.speechMechanism": {
+          "type": "string",
+          "enum": ["ariaLive", "notification"],
+          "enumDescriptions": [
+            "Verstecktes Webview mit aria-live-Region (Standard, nicht aufdringlich).",
+            "Benachrichtigung via showInformationMessage (garantierter Fallback, aufdringlich)."
+          ],
+          "default": "ariaLive",
+          "description": "Wie die Kontext-Sprachausgabe an den Screenreader übergeben wird."
+        }
+      }
+    },
     "commands": [
       {
         "command": "blindcode-navigator.helloWorld",

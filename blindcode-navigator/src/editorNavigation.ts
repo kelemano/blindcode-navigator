@@ -8,6 +8,7 @@ import {
     findPrevSibling,
     toMeaningfulNode,
 } from './navigator';
+import type { SpeechController } from './speech';
 
 /**
  * Dünne Adapter-Schicht zwischen der reinen Navigator-Logik (navigator.ts) und
@@ -61,8 +62,11 @@ function moveToNode(editor: vscode.TextEditor, node: Parser.SyntaxNode): void {
     );
 }
 
-/** Führt einen Navigationsschritt aus: bewegt den Cursor oder meldet das Edge-Case. */
-function navigate(editor: vscode.TextEditor, step: NavStep): void {
+/**
+ * Führt einen Navigationsschritt aus: bewegt den Cursor und spricht den Kontext
+ * des Zielknotens (Trigger onNavigate, M3) oder meldet das Edge-Case.
+ */
+function navigate(editor: vscode.TextEditor, step: NavStep, speech: SpeechController): void {
     const start = currentNode(editor);
     const target = start ? step.find(start) : null;
     if (!target) {
@@ -70,20 +74,21 @@ function navigate(editor: vscode.TextEditor, step: NavStep): void {
         return;
     }
     moveToNode(editor, target);
+    speech.announce(target);
 }
 
-export function navigateToParent(editor: vscode.TextEditor): void {
-    navigate(editor, STEPS.parent);
+export function navigateToParent(editor: vscode.TextEditor, speech: SpeechController): void {
+    navigate(editor, STEPS.parent, speech);
 }
 
-export function navigateToFirstChild(editor: vscode.TextEditor): void {
-    navigate(editor, STEPS.firstChild);
+export function navigateToFirstChild(editor: vscode.TextEditor, speech: SpeechController): void {
+    navigate(editor, STEPS.firstChild, speech);
 }
 
-export function navigateToNextSibling(editor: vscode.TextEditor): void {
-    navigate(editor, STEPS.nextSibling);
+export function navigateToNextSibling(editor: vscode.TextEditor, speech: SpeechController): void {
+    navigate(editor, STEPS.nextSibling, speech);
 }
 
-export function navigateToPrevSibling(editor: vscode.TextEditor): void {
-    navigate(editor, STEPS.prevSibling);
+export function navigateToPrevSibling(editor: vscode.TextEditor, speech: SpeechController): void {
+    navigate(editor, STEPS.prevSibling, speech);
 }

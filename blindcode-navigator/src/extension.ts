@@ -1,11 +1,13 @@
 import * as vscode from 'vscode';
 import { getAST, getNamedNodeAtCursor, invalidateCache } from './parser';
+import { toMeaningfulNode } from './navigator';
 import {
     navigateToParent,
     navigateToFirstChild,
     navigateToNextSibling,
     navigateToPrevSibling,
 } from './editorNavigation';
+import { SpeechController } from './speech';
 
 const DEBOUNCE_MS = 300;
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -14,7 +16,8 @@ export function activate(context: vscode.ExtensionContext) {
     const outputChannel = vscode.window.createOutputChannel('BlindCode Navigator');
     const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     statusBar.show();
-    context.subscriptions.push(outputChannel, statusBar);
+    const speech = new SpeechController(statusBar);
+    context.subscriptions.push(outputChannel, statusBar, speech);
 
     function updateNodeInfo(editor: vscode.TextEditor): void {
         if (editor.document.languageId !== 'java') {
@@ -23,8 +26,10 @@ export function activate(context: vscode.ExtensionContext) {
         }
         const tree = getAST(editor.document);
         const position = editor.selection.active;
-        const node = getNamedNodeAtCursor(tree, position);
-        statusBar.text = `BCNav: [${node.type}]`;
+        const node = toMeaningfulNode(getNamedNodeAtCursor(tree, position));
+        if (!node) { return; }
+        // Statusleiste für die Versuchsleiterin; gesprochen wird nur bei Navigation.
+        speech.showStatus(node);
         outputChannel.appendLine(`${position.line + 1}:${position.character + 1}  ${node.type}`);
     }
 
@@ -44,10 +49,12 @@ export function activate(context: vscode.ExtensionContext) {
         updateNodeInfo(initialEditor);
     }
 
-    function withJavaEditor(fn: (editor: vscode.TextEditor) => void): () => void {
+    function withJavaEditor(
+        fn: (editor: vscode.TextEditor, speech: SpeechController) => void
+    ): () => void {
         return () => {
             const editor = vscode.window.activeTextEditor;
-            if (editor && editor.document.languageId === 'java') { fn(editor); }
+            if (editor && editor.document.languageId === 'java') { fn(editor, speech); }
         };
     }
 
