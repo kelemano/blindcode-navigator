@@ -6,6 +6,7 @@ import {
     findFirstChild,
     findNextSibling,
     findPrevSibling,
+    toMeaningfulNode,
 } from './navigator';
 
 /**
@@ -40,10 +41,14 @@ const STEPS = {
     },
 } satisfies Record<string, NavStep>;
 
-/** Knoten an der aktuellen Cursorposition. */
-function currentNode(editor: vscode.TextEditor): Parser.SyntaxNode {
+/**
+ * Knoten an der aktuellen Cursorposition, normalisiert: liegt der Cursor auf
+ * einem strukturellen Körper-Knoten (block, …), wird auf einen
+ * bedeutungstragenden Knoten umgesetzt (siehe navigator.toMeaningfulNode).
+ */
+function currentNode(editor: vscode.TextEditor): Parser.SyntaxNode | null {
     const tree = getAST(editor.document);
-    return getNamedNodeAtCursor(tree, editor.selection.active);
+    return toMeaningfulNode(getNamedNodeAtCursor(tree, editor.selection.active));
 }
 
 /** Setzt Cursor und Auswahl auf den Anfang des Zielknotens. */
@@ -58,7 +63,8 @@ function moveToNode(editor: vscode.TextEditor, node: Parser.SyntaxNode): void {
 
 /** Führt einen Navigationsschritt aus: bewegt den Cursor oder meldet das Edge-Case. */
 function navigate(editor: vscode.TextEditor, step: NavStep): void {
-    const target = step.find(currentNode(editor));
+    const start = currentNode(editor);
+    const target = start ? step.find(start) : null;
     if (!target) {
         vscode.window.showInformationMessage(step.edgeMessage);
         return;

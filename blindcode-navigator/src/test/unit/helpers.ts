@@ -1,7 +1,6 @@
 import Parser = require('tree-sitter');
 import type * as vscode from 'vscode';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const JavaLanguage = require('tree-sitter-java');
 
 /** Parst Java-Quelltext direkt mit tree-sitter (ohne VS Code). */

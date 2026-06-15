@@ -3,7 +3,6 @@ import Parser = require('tree-sitter');
 // VS Code und ist in reinem Node (mocha) unit-testbar.
 import type * as vscode from 'vscode';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const JavaLanguage = require('tree-sitter-java');
 
 const parser = new Parser();
