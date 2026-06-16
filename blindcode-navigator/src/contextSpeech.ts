@@ -44,6 +44,44 @@ const KIND_LABELS: Record<OutlineKind, string> = {
     lambda: 'Lambda-Ausdruck',
 };
 
+/**
+ * Versteckte Such-Stichwörter je Outline-Art — vor allem die englischen Java-
+ * Schlüsselwörter, damit die Gliederungs-Liste (Alt+O) auch mit den Wörtern aus
+ * dem Quelltext filtert (z. B. „else" findet „Sonst-Zweig"). Die deutschen Labels
+ * werden zusätzlich mitdurchsucht (siehe outlineMatches), daher hier nur die
+ * Ergänzungen/Synonyme.
+ */
+const KIND_KEYWORDS: Record<OutlineKind, string> = {
+    class: 'class',
+    interface: 'interface',
+    enum: 'enum',
+    method: 'method',
+    constructor: 'constructor',
+    field: 'field',
+    if: 'if',
+    'then-branch': 'then dann if',
+    'else-branch': 'else sonst',
+    for: 'for',
+    foreach: 'for foreach for-each',
+    while: 'while',
+    do: 'do',
+    switch: 'switch',
+    try: 'try',
+    catch: 'catch',
+    finally: 'finally',
+    sync: 'synchronized',
+    labeled: 'label',
+    return: 'return',
+    break: 'break',
+    continue: 'continue',
+    throw: 'throw',
+    yield: 'yield',
+    assert: 'assert',
+    variable: 'variable var',
+    statement: 'statement call aufruf',
+    lambda: 'lambda',
+};
+
 /** Outline-Arten mit Namen (über das 'name'-Feld). */
 const NAMED_KINDS = new Set<OutlineKind>([
     'class', 'interface', 'enum', 'method', 'constructor',
@@ -147,4 +185,27 @@ function scopeQualifiers(node: OutlineNode): string[] {
 /** Vollständige Orientierungsbeschreibung: Selbst + Skopus-Kette, durch ", " verbunden. */
 export function buildContextString(node: OutlineNode): string {
     return [describeOutlineNode(node), ...scopeQualifiers(node)].join(', ');
+}
+
+/**
+ * Durchsuchbarer Text eines Knotens für die Gliederungs-Liste (Alt+O): deutsches
+ * Label PLUS englische Java-Schlüsselwörter. Damit findet sowohl „Sonst-Zweig" als
+ * auch „else" denselben Knoten.
+ */
+export function outlineSearchText(node: OutlineNode): string {
+    return `${describeOutlineNode(node)} ${KIND_KEYWORDS[node.kind]}`.toLowerCase();
+}
+
+/**
+ * Filter-Treffer für die Gliederungs-Liste: jedes (durch Leerzeichen getrennte)
+ * Such-Token muss im durchsuchbaren Text vorkommen (Teilstring, klein geschrieben).
+ * Leere Eingabe = Treffer (alles anzeigen).
+ */
+export function outlineMatches(node: OutlineNode, query: string): boolean {
+    const haystack = outlineSearchText(node);
+    return query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean)
+        .every(token => haystack.includes(token));
 }

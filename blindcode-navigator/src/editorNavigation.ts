@@ -11,7 +11,7 @@ import {
     Outline,
     OutlineNode,
 } from './navigator';
-import { describeOutlineNode } from './contextSpeech';
+import { describeOutlineNode, outlineMatches } from './contextSpeech';
 import type { SpeechController } from './speech';
 
 /**
@@ -98,29 +98,43 @@ interface OutlineQuickPickItem extends vscode.QuickPickItem {
 
 /**
  * Alt+O — Gliederungs-Liste (StructJumper-Analog). Zeigt alle Outline-Knoten in
- * Lesereihenfolge als barrierefreie QuickPick. Tippen filtert, Enter springt zum Knoten.
+ * Lesereihenfolge als barrierefreie QuickPick. Das sichtbare Label ist deutsch;
+ * gefiltert wird über `outlineMatches` (deutsches Label UND englische Java-
+ * Schlüsselwörter), sodass z. B. „else" den „Sonst-Zweig" findet. `alwaysShow`
+ * schaltet die eingebaute (nur Label-)Filterung von VS Code ab, damit unser
+ * eigener Filter maßgeblich ist. Enter springt zum Knoten und spricht den Kontext.
  */
-export async function showOutline(
-    editor: vscode.TextEditor,
-    speech: SpeechController
-): Promise<void> {
+export function showOutline(editor: vscode.TextEditor, speech: SpeechController): void {
     const tree = getAST(editor.document);
     const outline = buildOutline(tree.rootNode);
     if (outline.linear.length === 0) {
         vscode.window.showInformationMessage('Keine Code-Struktur in dieser Datei');
         return;
     }
-    const items: OutlineQuickPickItem[] = outline.linear.map(node => ({
+    const allItems: OutlineQuickPickItem[] = outline.linear.map(node => ({
         label: `${'    '.repeat(outlineDepth(node))}${describeOutlineNode(node)}`,
         description: `Zeile ${node.astNode.startPosition.row + 1}`,
+        alwaysShow: true,
         node,
     }));
-    const picked = await vscode.window.showQuickPick(items, {
-        placeHolder: 'Zu Knoten springen … (tippen zum Filtern, z. B. else, for, return)',
-        matchOnDescription: true,
+
+    const quickPick = vscode.window.createQuickPick<OutlineQuickPickItem>();
+    quickPick.placeholder = 'Filtern (z. B. else, if, for, while, return) – Enter springt zum Knoten';
+    quickPick.items = allItems;
+    quickPick.onDidChangeValue(value => {
+        const query = value.trim();
+        quickPick.items = query
+            ? allItems.filter(item => outlineMatches(item.node, query))
+            : allItems;
     });
-    if (picked) {
-        moveToNode(editor, picked.node);
-        speech.announce(picked.node);
-    }
+    quickPick.onDidAccept(() => {
+        const selected = quickPick.selectedItems[0];
+        if (selected) {
+            moveToNode(editor, selected.node);
+            speech.announce(selected.node);
+        }
+        quickPick.hide();
+    });
+    quickPick.onDidHide(() => quickPick.dispose());
+    quickPick.show();
 }

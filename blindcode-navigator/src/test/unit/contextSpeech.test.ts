@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { buildOutline, Outline, OutlineNode } from '../../navigator';
-import { buildContextString, describeOutlineNode } from '../../contextSpeech';
+import { buildContextString, describeOutlineNode, outlineMatches } from '../../contextSpeech';
 import { parseJava } from './helpers';
 
 const SRC = `public class MathLogic {
@@ -60,6 +60,42 @@ suite('contextSpeech — Ansage auf dem Outline-Baum', () => {
             buildContextString(at('for', 4)),
             'for-Schleife, im Dann-Zweig, in Methode calculate, Klasse MathLogic'
         );
+    });
+
+    suite('outlineMatches (Filter der Gliederungs-Liste: deutsch UND Java-Schlüsselwort)', () => {
+        test('„else" findet den Sonst-Zweig (Java-Schlüsselwort statt deutschem Label)', () => {
+            assert.ok(outlineMatches(at('else-branch', 9), 'else'));
+        });
+        test('„sonst" und „zweig" finden den Sonst-Zweig (deutsches Label)', () => {
+            assert.ok(outlineMatches(at('else-branch', 9), 'sonst'));
+            assert.ok(outlineMatches(at('else-branch', 9), 'zweig'));
+        });
+        test('„if" findet beide if-Anweisungen', () => {
+            const hits = outline.linear.filter(n => outlineMatches(n, 'if'));
+            assert.deepStrictEqual(hits.map(n => n.kind).filter(k => k === 'if').length, 2);
+        });
+        test('„return" findet beide return-Anweisungen', () => {
+            const hits = outline.linear.filter(n => outlineMatches(n, 'return'));
+            assert.strictEqual(hits.length, 2);
+            assert.ok(hits.every(n => n.kind === 'return'));
+        });
+        test('„for" findet die for-Schleife, „while" nicht', () => {
+            assert.ok(outlineMatches(at('for', 4), 'for'));
+            assert.ok(!outlineMatches(at('for', 4), 'while'));
+        });
+        test('„class" findet die Klasse (deutsches Label „Klasse" enthält kein „class")', () => {
+            assert.ok(outlineMatches(at('class', 1), 'class'));
+        });
+        test('„then" und „dann" finden den Dann-Zweig', () => {
+            assert.ok(outlineMatches(at('then-branch', 3), 'then'));
+            assert.ok(outlineMatches(at('then-branch', 3), 'dann'));
+        });
+        test('leere Eingabe ist immer ein Treffer (zeigt alles)', () => {
+            assert.ok(outline.linear.every(n => outlineMatches(n, '')));
+        });
+        test('nicht passender Begriff trifft nicht', () => {
+            assert.ok(!outlineMatches(at('else-branch', 9), 'for'));
+        });
     });
 
     suite('describeOutlineNode (Selbst-Beschreibung)', () => {
