@@ -35,6 +35,17 @@
     "configuration": {
       "title": "BlindCode Navigator",
       "properties": {
+        "blindcode.studyCondition": {
+          "type": "string",
+          "enum": ["A", "B", "C"],
+          "enumDescriptions": [
+            "A — Kontrolle: Extension aus (nur Screenreader).",
+            "B — Navigation + Kontext-Sprachausgabe, ohne Sonifikation.",
+            "C — alles an: Navigation + Sprache + Sonifikation."
+          ],
+          "default": "C",
+          "description": "Studienbedingung (A/B/C). Schaltet die Funktionen je Bedingung für die Vergleichsstudie."
+        },
         "blindcode.speechMechanism": {
           "type": "string",
           "enum": ["ariaLive", "notification"],
@@ -101,6 +112,10 @@
       {
         "command": "blindcode-navigator.toggleSonification",
         "title": "BCNav: Sonifikation an/aus"
+      },
+      {
+        "command": "blindcode-navigator.setStudyCondition",
+        "title": "BCNav: Studienbedingung wählen (A/B/C)"
       }
     ],
     "keybindings": [

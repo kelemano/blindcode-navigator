@@ -12,9 +12,15 @@ import {
 import { SpeechController } from './speech';
 import { TreeViewProvider } from './treePanel';
 import { SonificationController } from './sonificationPlayer';
+import { ConditionManager, StudyCondition } from './conditionManager';
 
-function sonificationEnabledFromConfig(): boolean {
+function sonificationSettingFromConfig(): boolean {
     return vscode.workspace.getConfiguration('blindcode').get<boolean>('sonification', true);
+}
+
+function studyConditionFromConfig(): StudyCondition {
+    const value = vscode.workspace.getConfiguration('blindcode').get<string>('studyCondition', 'C');
+    return value === 'A' || value === 'B' || value === 'C' ? value : 'C';
 }
 
 const DEBOUNCE_MS = 300;
@@ -40,9 +46,31 @@ export function activate(context: vscode.ExtensionContext) {
         { webviewOptions: { retainContextWhenHidden: true } }
     );
     // Sonifikation (Tiefe → Tonhöhe) via Web-Audio-Webview. An-/abschaltbar (M5: A/B/C).
-    const sonification = new SonificationController(sonificationEnabledFromConfig());
+    const sonification = new SonificationController(false);
     const services: NavServices = { speech, sonification };
-    context.subscriptions.push(outputChannel, statusBar, speech, treeRegistration, sonification);
+
+    // Studienbedingung A/B/C: schaltet die Funktionen je Bedingung.
+    const conditionManager = new ConditionManager(studyConditionFromConfig());
+    const conditionStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
+    conditionStatusBar.show();
+
+    /** Wendet die aktuelle Bedingung an: Statusanzeige + effektive Sonifikation. */
+    function applyCondition(): void {
+        conditionManager.setCondition(studyConditionFromConfig());
+        const condition = conditionManager.current;
+        conditionStatusBar.text = `BCNav: Bedingung ${condition}`;
+        conditionStatusBar.tooltip =
+            'Studienbedingung — A: aus (nur Screenreader) · B: Navigation + Sprache · C: + Sonifikation';
+        // Sonifikation nur, wenn die Bedingung sie erlaubt UND die Einstellung an ist.
+        sonification.setEnabled(
+            conditionManager.isEnabled('sonification') && sonificationSettingFromConfig()
+        );
+    }
+
+    context.subscriptions.push(
+        outputChannel, statusBar, conditionStatusBar, speech, treeRegistration, sonification
+    );
+    applyCondition();
 
     function updateNodeInfo(editor: vscode.TextEditor): void {
         if (editor.document.languageId !== 'java') {
@@ -75,10 +103,13 @@ export function activate(context: vscode.ExtensionContext) {
         updateNodeInfo(initialEditor);
     }
 
+    // Navigation (und die Gliederungs-Liste) sind in Bedingung A deaktiviert → Alt-Tasten
+    // tun dann nichts, es gibt keine Sprach-/Audioausgabe.
     function withJavaEditor(
         fn: (editor: vscode.TextEditor, services: NavServices) => void
     ): () => void {
         return () => {
+            if (!conditionManager.isEnabled('navigation')) { return; }
             const editor = vscode.window.activeTextEditor;
             if (editor && editor.document.languageId === 'java') { fn(editor, services); }
         };
@@ -96,17 +127,44 @@ export function activate(context: vscode.ExtensionContext) {
             invalidateCache(doc.uri.toString());
         }),
         vscode.workspace.onDidChangeConfiguration(event => {
-            if (event.affectsConfiguration('blindcode.sonification')) {
-                sonification.setEnabled(sonificationEnabledFromConfig());
+            if (
+                event.affectsConfiguration('blindcode.studyCondition') ||
+                event.affectsConfiguration('blindcode.sonification')
+            ) {
+                applyCondition();
                 sonification.refreshConfig();
             }
         }),
         vscode.commands.registerCommand('blindcode-navigator.toggleSonification', () => {
-            const on = !sonification.isEnabled();
-            sonification.setEnabled(on);
+            const on = !sonificationSettingFromConfig();
             void vscode.workspace.getConfiguration('blindcode')
-                .update('sonification', on, vscode.ConfigurationTarget.Global);
-            vscode.window.showInformationMessage(`Sonifikation ${on ? 'an' : 'aus'}`);
+                .update('sonification', on, vscode.ConfigurationTarget.Global)
+                .then(() => {
+                    applyCondition();
+                    if (on && !conditionManager.isEnabled('sonification')) {
+                        vscode.window.showInformationMessage(
+                            `Sonifikation aktiviert, aber in Bedingung ${conditionManager.current} inaktiv.`
+                        );
+                    } else {
+                        vscode.window.showInformationMessage(`Sonifikation ${on ? 'an' : 'aus'}`);
+                    }
+                });
+        }),
+        vscode.commands.registerCommand('blindcode-navigator.setStudyCondition', async () => {
+            const pick = await vscode.window.showQuickPick(
+                [
+                    { label: 'A', description: 'Kontrolle — Extension aus (nur Screenreader)' },
+                    { label: 'B', description: 'Navigation + Sprachausgabe (kein Audio)' },
+                    { label: 'C', description: 'Navigation + Sprache + Sonifikation' },
+                ],
+                { placeHolder: 'Studienbedingung wählen' }
+            );
+            if (pick) {
+                await vscode.workspace.getConfiguration('blindcode')
+                    .update('studyCondition', pick.label, vscode.ConfigurationTarget.Global);
+                applyCondition();
+                vscode.window.showInformationMessage(`Studienbedingung ${pick.label} aktiv`);
+            }
         }),
         vscode.commands.registerCommand(
             'blindcode-navigator.navigateDown',
