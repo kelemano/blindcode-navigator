@@ -1,60 +1,46 @@
 import * as vscode from 'vscode';
-import Parser = require('tree-sitter');
 import { getAST, getNamedNodeAtCursor } from './parser';
 import {
-    findParent,
-    findFirstChild,
-    findNextSibling,
-    findPrevSibling,
-    toMeaningfulNode,
+    buildOutline,
+    outlineNodeFor,
+    navDown,
+    navUp,
+    navIn,
+    navOut,
+    Outline,
+    OutlineNode,
 } from './navigator';
 import type { SpeechController } from './speech';
 
 /**
- * Dünne Adapter-Schicht zwischen der reinen Navigator-Logik (navigator.ts) und
- * der VS-Code-UI. Hier — und nur hier — wird der Cursor bewegt und werden
- * Edge-Case-Meldungen ausgegeben. Dadurch bleibt navigator.ts frei von
- * VS-Code-Abhängigkeiten und unit-testbar (Kap. 4.1, separation of concerns).
+ * VS-Code-Adapter für die Outline-Navigation (Kap. 5.3). Baut pro Tastendruck den
+ * Outline-Baum (klein, < 500 LOC → vernachlässigbar), findet den Knoten an der
+ * Cursorposition, wendet die Richtung an, bewegt den Cursor und spricht den Kontext.
+ *
+ * Tastenbelegung (StructJumper-Gliederung):
+ *   Alt+↓ navigateDown · Alt+↑ navigateUp · Alt+→ navigateIn · Alt+← navigateOut
  */
 
-/** Reine Navigationsfunktion + die Meldung, falls sie kein Ziel findet. */
-type NavStep = {
-    find: (node: Parser.SyntaxNode) => Parser.SyntaxNode | null;
-    edgeMessage: string;
-};
-
-const STEPS = {
-    parent: {
-        find: findParent,
-        edgeMessage: 'Oberste Ebene erreicht',
-    },
-    firstChild: {
-        find: findFirstChild,
-        edgeMessage: 'Kein untergeordneter Block',
-    },
-    nextSibling: {
-        find: findNextSibling,
-        edgeMessage: 'Kein weiterer Block auf dieser Ebene',
-    },
-    prevSibling: {
-        find: findPrevSibling,
-        edgeMessage: 'Kein weiterer Block auf dieser Ebene',
-    },
-} satisfies Record<string, NavStep>;
-
-/**
- * Knoten an der aktuellen Cursorposition, normalisiert: liegt der Cursor auf
- * einem strukturellen Körper-Knoten (block, …), wird auf einen
- * bedeutungstragenden Knoten umgesetzt (siehe navigator.toMeaningfulNode).
- */
-function currentNode(editor: vscode.TextEditor): Parser.SyntaxNode | null {
+/** Outline-Knoten an der aktuellen Cursorposition (oder null). */
+export function outlineNodeAtCursor(editor: vscode.TextEditor): OutlineNode | null {
     const tree = getAST(editor.document);
-    return toMeaningfulNode(getNamedNodeAtCursor(tree, editor.selection.active));
+    const outline = buildOutline(tree.rootNode);
+    const astNode = getNamedNodeAtCursor(tree, editor.selection.active);
+    return outlineNodeFor(outline, astNode);
+}
+
+function locate(editor: vscode.TextEditor): { outline: Outline; node: OutlineNode } | null {
+    const tree = getAST(editor.document);
+    const outline = buildOutline(tree.rootNode);
+    const astNode = getNamedNodeAtCursor(tree, editor.selection.active);
+    const node = outlineNodeFor(outline, astNode);
+    return node ? { outline, node } : null;
 }
 
 /** Setzt Cursor und Auswahl auf den Anfang des Zielknotens. */
-function moveToNode(editor: vscode.TextEditor, node: Parser.SyntaxNode): void {
-    const pos = new vscode.Position(node.startPosition.row, node.startPosition.column);
+function moveToNode(editor: vscode.TextEditor, node: OutlineNode): void {
+    const start = node.astNode.startPosition;
+    const pos = new vscode.Position(start.row, start.column);
     editor.selection = new vscode.Selection(pos, pos);
     editor.revealRange(
         new vscode.Range(pos, pos),
@@ -62,33 +48,42 @@ function moveToNode(editor: vscode.TextEditor, node: Parser.SyntaxNode): void {
     );
 }
 
-/**
- * Führt einen Navigationsschritt aus: bewegt den Cursor und spricht den Kontext
- * des Zielknotens (Trigger onNavigate, M3) oder meldet das Edge-Case.
- */
-function navigate(editor: vscode.TextEditor, step: NavStep, speech: SpeechController): void {
-    const start = currentNode(editor);
-    const target = start ? step.find(start) : null;
+function go(
+    editor: vscode.TextEditor,
+    speech: SpeechController,
+    pick: (outline: Outline, node: OutlineNode) => OutlineNode | null,
+    edgeMessage: string
+): void {
+    const located = locate(editor);
+    if (!located) {
+        vscode.window.showInformationMessage('Keine Code-Struktur an dieser Position');
+        return;
+    }
+    const target = pick(located.outline, located.node);
     if (!target) {
-        vscode.window.showInformationMessage(step.edgeMessage);
+        vscode.window.showInformationMessage(edgeMessage);
         return;
     }
     moveToNode(editor, target);
     speech.announce(target);
 }
 
-export function navigateToParent(editor: vscode.TextEditor, speech: SpeechController): void {
-    navigate(editor, STEPS.parent, speech);
+/** Alt+↓ — nächster Knoten in Lesereihenfolge. */
+export function navigateDown(editor: vscode.TextEditor, speech: SpeechController): void {
+    go(editor, speech, (outline, node) => navDown(outline, node), 'Ende des Codes erreicht');
 }
 
-export function navigateToFirstChild(editor: vscode.TextEditor, speech: SpeechController): void {
-    navigate(editor, STEPS.firstChild, speech);
+/** Alt+↑ — vorheriger Knoten in Lesereihenfolge. */
+export function navigateUp(editor: vscode.TextEditor, speech: SpeechController): void {
+    go(editor, speech, (outline, node) => navUp(outline, node), 'Anfang des Codes erreicht');
 }
 
-export function navigateToNextSibling(editor: vscode.TextEditor, speech: SpeechController): void {
-    navigate(editor, STEPS.nextSibling, speech);
+/** Alt+→ — eine Ebene hinein (erstes Kind). */
+export function navigateIn(editor: vscode.TextEditor, speech: SpeechController): void {
+    go(editor, speech, (_outline, node) => navIn(node), 'Keine tiefere Ebene');
 }
 
-export function navigateToPrevSibling(editor: vscode.TextEditor, speech: SpeechController): void {
-    navigate(editor, STEPS.prevSibling, speech);
+/** Alt+← — eine Ebene heraus (Elternknoten). */
+export function navigateOut(editor: vscode.TextEditor, speech: SpeechController): void {
+    go(editor, speech, (_outline, node) => navOut(node), 'Oberste Ebene erreicht');
 }

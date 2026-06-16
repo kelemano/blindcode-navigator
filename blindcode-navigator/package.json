@@ -35,40 +35,40 @@
         "title": "Hello World"
       },
       {
-        "command": "blindcode-navigator.navigateToParent",
-        "title": "BCNav: Navigate to Parent Node"
+        "command": "blindcode-navigator.navigateDown",
+        "title": "BCNav: Nächster Knoten (Lesereihenfolge)"
       },
       {
-        "command": "blindcode-navigator.navigateToFirstChild",
-        "title": "BCNav: Navigate to First Child Node"
+        "command": "blindcode-navigator.navigateUp",
+        "title": "BCNav: Vorheriger Knoten (Lesereihenfolge)"
       },
       {
-        "command": "blindcode-navigator.navigateToNextSibling",
-        "title": "BCNav: Navigate to Next Sibling Node"
+        "command": "blindcode-navigator.navigateIn",
+        "title": "BCNav: Eine Ebene hinein"
       },
       {
-        "command": "blindcode-navigator.navigateToPrevSibling",
-        "title": "BCNav: Navigate to Previous Sibling Node"
+        "command": "blindcode-navigator.navigateOut",
+        "title": "BCNav: Eine Ebene heraus"
       }
     ],
     "keybindings": [
       {
-        "command": "blindcode-navigator.navigateToParent",
-        "key": "alt+up",
-        "when": "editorTextFocus && editorLangId == 'java'"
-      },
-      {
-        "command": "blindcode-navigator.navigateToFirstChild",
+        "command": "blindcode-navigator.navigateDown",
         "key": "alt+down",
         "when": "editorTextFocus && editorLangId == 'java'"
       },
       {
-        "command": "blindcode-navigator.navigateToNextSibling",
+        "command": "blindcode-navigator.navigateUp",
+        "key": "alt+up",
+        "when": "editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.navigateIn",
         "key": "alt+right",
         "when": "editorTextFocus && editorLangId == 'java'"
       },
       {
-        "command": "blindcode-navigator.navigateToPrevSibling",
+        "command": "blindcode-navigator.navigateOut",
         "key": "alt+left",
         "when": "editorTextFocus && editorLangId == 'java'"
       }

@@ -1,15 +1,15 @@
 import * as assert from 'assert';
-import Parser = require('tree-sitter');
 import {
-    findParent,
-    findFirstChild,
-    findNextSibling,
-    findPrevSibling,
-    toMeaningfulNode,
-    isMeaningful,
-    ifBranchKind,
+    buildOutline,
+    outlineNodeFor,
+    navDown,
+    navUp,
+    navIn,
+    navOut,
+    Outline,
+    OutlineNode,
 } from '../../navigator';
-import { parseJava, findFirstOfType } from './helpers';
+import { parseJava } from './helpers';
 
 // Identisch zur Studien-Fixture test-java/MathLogic.java.
 const SRC = `public class MathLogic {
@@ -28,172 +28,133 @@ const SRC = `public class MathLogic {
 }`;
 
 const tree = parseJava(SRC);
-const root = tree.rootNode;
+const outline: Outline = buildOutline(tree.rootNode);
 
-function nodeAt(row: number, column: number): Parser.SyntaxNode {
-    return root.namedDescendantForPosition({ row, column });
+/** Erster Outline-Knoten einer Art (in Lesereihenfolge). */
+function first(kind: string): OutlineNode {
+    const node = outline.linear.find(n => n.kind === kind);
+    assert.ok(node, `Outline-Knoten der Art ${kind} erwartet`);
+    return node!;
+}
+/** Outline-Knoten einer Art in einer bestimmten Zeile (1-basiert). */
+function at(kind: string, line: number): OutlineNode {
+    const node = outline.linear.find(
+        n => n.kind === kind && n.astNode.startPosition.row === line - 1
+    );
+    assert.ok(node, `Outline-Knoten ${kind} in Zeile ${line} erwartet`);
+    return node!;
 }
 
-const classDecl = findFirstOfType(root, 'class_declaration')!;
-const method = findFirstOfType(root, 'method_declaration')!;
-const outerIf = nodeAt(2, 4);                                  // if (x > 0)            Zeile 3
-const forNode = findFirstOfType(root, 'for_statement')!;       // for (...)            Zeile 4
-const elseBlock = outerIf.childForFieldName('alternative')!;   // else-block           Zeile 9
-const returnMinus1 = nodeAt(9, 6);                             // return -1;           Zeile 10
-const returnX = nodeAt(11, 4);                                 // return x;            Zeile 12
-const printlnStmt = findFirstOfType(root, 'expression_statement')!; // println-Anweisung Zeile 6
+suite('navigator — Outline-Modell (StructJumper-Gliederung)', () => {
 
-suite('navigator — Meaningful-Node-Navigation', () => {
-
-    test('Fixture-Annahmen', () => {
-        assert.strictEqual(outerIf.type, 'if_statement');
-        assert.strictEqual(forNode.type, 'for_statement');
-        assert.strictEqual(elseBlock.type, 'block');
-        assert.strictEqual(ifBranchKind(elseBlock), 'else');
-        assert.strictEqual(returnMinus1.type, 'return_statement');
-        assert.strictEqual(returnX.type, 'return_statement');
+    test('Lesereihenfolge (Alt+↓) entspricht der erwarteten Gliederung', () => {
+        const order = outline.linear.map(n => n.kind);
+        assert.deepStrictEqual(order, [
+            'class',
+            'method',
+            'if',          // if (x > 0)
+            'then-branch',
+            'for',
+            'if',          // if (i % 2 == 0)
+            'then-branch',
+            'statement',   // System.out.println(i)
+            'else-branch',
+            'return',      // return -1
+            'return',      // return x
+        ]);
     });
 
-    suite('isMeaningful (Whitelist)', () => {
-        test('strukturelle Knoten sind bedeutungstragend', () => {
-            for (const n of [classDecl, method, outerIf, forNode, returnMinus1, printlnStmt]) {
-                assert.ok(isMeaningful(n), `${n.type} sollte meaningful sein`);
+    suite('Alt+↓ / Alt+↑ sind echte Inverse (Lesereihenfolge)', () => {
+        test('Down-dann-Up führt überall zum Ausgangsknoten zurück', () => {
+            for (const node of outline.linear) {
+                const down = navDown(outline, node);
+                if (down) {
+                    assert.strictEqual(navUp(outline, down)?.index, node.index);
+                }
             }
         });
-
-        test('der else-Zweig (alternative-block) ist bedeutungstragend', () => {
-            assert.ok(isMeaningful(elseBlock));
+        test('Anfang/Ende sind Edge Cases', () => {
+            assert.strictEqual(navUp(outline, outline.linear[0]), null);
+            assert.strictEqual(navDown(outline, outline.linear[outline.linear.length - 1]), null);
         });
+    });
 
-        test('Low-Level-Knoten werden NICHT als Stopp gewertet', () => {
-            const condition = outerIf.childForFieldName('condition')!;       // parenthesized_expression
-            const binary = condition.namedChildren[0];                       // binary_expression
-            const modifiers = findFirstOfType(root, 'modifiers')!;
-            const identifier = findFirstOfType(root, 'identifier')!;
-            const thenBlock = outerIf.childForFieldName('consequence')!;     // then-block: transparent
-            for (const n of [condition, binary, modifiers, identifier, thenBlock]) {
-                assert.ok(!isMeaningful(n), `${n.type} sollte NICHT meaningful sein`);
+    suite('Alt+→ / Alt+← sind echte Inverse (Verschachtelung)', () => {
+        test('In-dann-Out führt zum Ausgangsknoten zurück', () => {
+            for (const node of outline.linear) {
+                const inNode = navIn(node);
+                if (inNode) {
+                    assert.strictEqual(navOut(inNode)?.index, node.index);
+                }
             }
         });
     });
 
-    suite('findFirstChild (überspringt Low-Level + transparente Blöcke)', () => {
-        test('Methode -> erste Anweisung (if), nicht modifiers/type/params', () => {
-            assert.strictEqual(findFirstChild(method)?.type, 'if_statement');
+    suite('Kernanforderung: else-Zweig ist erreichbar', () => {
+        test('von der println-Anweisung erreicht ein einziges Alt+↓ den Sonst-Zweig', () => {
+            const println = first('statement');
+            const next = navDown(outline, println);
+            assert.strictEqual(next?.kind, 'else-branch');
         });
 
-        test('if -> for (nicht die Bedingung/parenthesized_expression)', () => {
-            assert.strictEqual(findFirstChild(outerIf)?.id, forNode.id);
+        test('Alt+→ in die äußere if-Anweisung liefert den Dann-Zweig, dann Alt+↓ den Sonst-Zweig', () => {
+            const outerIf = at('if', 3);
+            const dann = navIn(outerIf);
+            assert.strictEqual(dann?.kind, 'then-branch');
         });
 
-        test('Klasse -> Methode (class_body transparent)', () => {
-            assert.strictEqual(findFirstChild(classDecl)?.id, method.id);
-        });
-
-        test('Edge Case: Blatt-Anweisung (println) hat kein Kind', () => {
-            assert.strictEqual(findFirstChild(printlnStmt), null);
-        });
-    });
-
-    suite('findParent (Meaningful-Parent)', () => {
-        test('if -> Methode (Methodenrumpf transparent)', () => {
-            assert.strictEqual(findParent(outerIf)?.id, method.id);
-        });
-
-        test('println -> inneres if (then-Block transparent)', () => {
-            const parent = findParent(printlnStmt);
-            assert.strictEqual(parent?.type, 'if_statement');
-            assert.strictEqual(parent?.startPosition.row, 4); // inneres if, Zeile 5
-        });
-
-        test('Edge Case: Klasse hat keinen Parent (Wurzel)', () => {
-            assert.strictEqual(findParent(classDecl), null);
+        test('Alt+← aus return -1 läuft Sonst-Zweig → if → Methode → Klasse', () => {
+            const ret = at('return', 10);
+            const chain: string[] = [];
+            let cur: OutlineNode | null = ret;
+            while (cur) { chain.push(cur.kind); cur = navOut(cur); }
+            assert.deepStrictEqual(chain, ['return', 'else-branch', 'if', 'method', 'class']);
         });
     });
 
-    suite('if/else-Navigation (Kernanforderung)', () => {
-        test('Down(if) dann Right erreicht den else-Zweig', () => {
-            const down = findFirstChild(outerIf)!;                  // for
-            const right = findNextSibling(down)!;                   // else-block
-            assert.strictEqual(right.id, elseBlock.id);
-            assert.strictEqual(ifBranchKind(right), 'else');
+    suite('Konsistenz: hinein = Rumpf (kein Kopf-Stopp)', () => {
+        test('Alt+→ in die for-Schleife liefert die erste RUMPF-Anweisung (inneres if), nicht den Kopf', () => {
+            const forNode = first('for');
+            assert.strictEqual(navIn(forNode)?.kind, 'if');
         });
-
-        test('Parent-Kette aus dem else heraus: else-Zweig -> if -> Methode -> Klasse', () => {
-            const chain: Parser.SyntaxNode[] = [];
-            let cur: Parser.SyntaxNode | null = returnMinus1;
-            while (cur) { chain.push(cur); cur = findParent(cur); }
-            // chain[0] = return -1 selbst
-            assert.strictEqual(chain[1].id, elseBlock.id);          // else-Zweig
-            assert.strictEqual(chain[2].id, outerIf.id);            // if-Anweisung
-            assert.strictEqual(chain[3].id, method.id);             // Methode
-            assert.strictEqual(chain[4].id, classDecl.id);          // Klasse
-            assert.strictEqual(chain.length, 5);                    // danach: oberste Ebene
+        test('der for-Kopf (int i = 0) ist KEIN eigener Outline-Knoten', () => {
+            // In Zeile 4 gibt es nur die for-Schleife als Stopp, keine Variablendeklaration.
+            const stopsInLine4 = outline.linear.filter(n => n.astNode.startPosition.row === 3);
+            assert.deepStrictEqual(stopsInLine4.map(n => n.kind), ['for']);
         });
-
-        test('springt NICHT direkt von return -1 auf die Methode', () => {
-            assert.strictEqual(findParent(returnMinus1)?.type, 'block');
-            assert.notStrictEqual(findParent(returnMinus1)?.type, 'method_declaration');
+        test('Alt+→ in die Methode liefert die erste Anweisung (if), nicht modifiers/Typ/Parameter', () => {
+            assert.strictEqual(navIn(first('method'))?.kind, 'if');
         });
     });
 
-    suite('findNextSibling / findPrevSibling', () => {
-        test('nächstes Geschwister des if ist return x', () => {
-            assert.strictEqual(findNextSibling(outerIf)?.id, returnX.id);
-        });
-
-        test('nächstes Geschwister der for-Schleife ist der else-Zweig', () => {
-            assert.strictEqual(findNextSibling(forNode)?.id, elseBlock.id);
-        });
-
-        test('vorheriges Geschwister des else-Zweigs ist die for-Schleife', () => {
-            assert.strictEqual(findPrevSibling(elseBlock)?.id, forNode.id);
-        });
-
-        test('Edge Case: return -1 ist einziges Kind des else -> kein Geschwister', () => {
-            assert.strictEqual(findPrevSibling(returnMinus1), null);
-            assert.strictEqual(findNextSibling(returnMinus1), null);
-        });
-
-        test('Edge Case: letzte Anweisung der Methode hat kein nächstes Geschwister', () => {
-            assert.strictEqual(findNextSibling(returnX), null);
-        });
-
-        test('Edge Case: einzige Top-Level-Deklaration hat kein Geschwister', () => {
-            assert.strictEqual(findNextSibling(classDecl), null);
-            assert.strictEqual(findPrevSibling(classDecl), null);
+    suite('Low-Level-Knoten werden übersprungen', () => {
+        test('Bedingungen/Ausdrücke/Bezeichner sind keine Outline-Knoten', () => {
+            const kinds = new Set(outline.linear.map(n => n.astNode.type));
+            for (const noise of [
+                'parenthesized_expression', 'binary_expression', 'identifier',
+                'modifiers', 'field_access', 'method_invocation', 'update_expression',
+            ]) {
+                assert.ok(!kinds.has(noise), `${noise} sollte kein Outline-Knoten sein`);
+            }
         });
     });
 
-    suite('Up und Down sind echte Inverse (Down dann Up = Start)', () => {
-        for (const [name, node] of [
-            ['Klasse', classDecl],
-            ['Methode', method],
-            ['if', outerIf],
-            ['else-Zweig', elseBlock],
-            ['for', forNode],
-        ] as const) {
-            test(`Down/Up auf ${name}`, () => {
-                const down = findFirstChild(node);
-                assert.ok(down, `${name} sollte ein Kind haben`);
-                assert.strictEqual(findParent(down!)?.id, node.id);
-            });
-        }
-    });
-
-    suite('toMeaningfulNode (Cursor-Normalisierung steigt auf)', () => {
-        test('Cursor in der Bedingung (binary_expression) -> if-Anweisung', () => {
-            const binary = outerIf.childForFieldName('condition')!.namedChildren[0];
-            assert.strictEqual(toMeaningfulNode(binary)?.id, outerIf.id);
+    suite('outlineNodeFor (Cursor → Outline-Knoten)', () => {
+        test('Cursor in der Bedingung (binary_expression) landet auf der if-Anweisung', () => {
+            const outerIf = at('if', 3);
+            const binary = outerIf.astNode
+                .childForFieldName('condition')!
+                .namedChildren[0]; // binary_expression
+            assert.strictEqual(outlineNodeFor(outline, binary)?.index, outerIf.index);
         });
-
-        test('Cursor auf dem Methodenrumpf-block -> Methode', () => {
-            const methodBody = method.childForFieldName('body')!;
-            assert.strictEqual(toMeaningfulNode(methodBody)?.id, method.id);
+        test('Cursor im for-Kopf (int i = 0) landet auf der for-Schleife', () => {
+            const forNode = first('for');
+            const init = forNode.astNode.childForFieldName('init')!; // local_variable_declaration
+            assert.strictEqual(outlineNodeFor(outline, init)?.index, forNode.index);
         });
-
-        test('bedeutungstragender Knoten bleibt unverändert', () => {
-            assert.strictEqual(toMeaningfulNode(outerIf)?.id, outerIf.id);
+        test('Cursor auf einem bedeutungstragenden Knoten bleibt dort', () => {
+            const ret = at('return', 12);
+            assert.strictEqual(outlineNodeFor(outline, ret.astNode)?.index, ret.index);
         });
     });
 });

@@ -1,7 +1,7 @@
 import * as assert from 'assert';
-import Parser = require('tree-sitter');
-import { buildContextString, describeNode } from '../../contextSpeech';
-import { parseJava, findFirstOfType } from './helpers';
+import { buildOutline, Outline, OutlineNode } from '../../navigator';
+import { buildContextString, describeOutlineNode } from '../../contextSpeech';
+import { parseJava } from './helpers';
 
 const SRC = `public class MathLogic {
   public int calculate(int x) {
@@ -18,87 +18,60 @@ const SRC = `public class MathLogic {
   }
 }`;
 
-const tree = parseJava(SRC);
-const root = tree.rootNode;
+const outline: Outline = buildOutline(parseJava(SRC).rootNode);
 
-function nodeAt(row: number, column: number): Parser.SyntaxNode {
-    return root.namedDescendantForPosition({ row, column });
+function at(kind: string, line: number): OutlineNode {
+    const node = outline.linear.find(
+        n => n.kind === kind && n.astNode.startPosition.row === line - 1
+    );
+    assert.ok(node, `${kind} in Zeile ${line} erwartet`);
+    return node!;
 }
 
-const outerIf = findFirstOfType(root, 'if_statement')!;
-const elseBlock = outerIf.childForFieldName('alternative')!;       // 2. block = else
-const returnMinus1 = nodeAt(9, 6);                                 // return -1;  (im else)
-const forNode = findFirstOfType(root, 'for_statement')!;
-const method = findFirstOfType(root, 'method_declaration')!;
-const classDecl = findFirstOfType(root, 'class_declaration')!;
+suite('contextSpeech — Ansage auf dem Outline-Baum', () => {
 
-suite('contextSpeech — buildContextString', () => {
+    test('Klasse (oberste Ebene): "Klasse MathLogic"', () => {
+        assert.strictEqual(buildContextString(at('class', 1)), 'Klasse MathLogic');
+    });
 
-    test('DoD: else-Zweig exakt "else-Zweig, in Methode calculate, Klasse MathLogic"', () => {
+    test('Methode: "Methode calculate, Klasse MathLogic"', () => {
         assert.strictEqual(
-            buildContextString(elseBlock),
-            'else-Zweig, in Methode calculate, Klasse MathLogic'
+            buildContextString(at('method', 2)),
+            'Methode calculate, Klasse MathLogic'
         );
     });
 
-    test('Skopus wird trotz Block-Skip vermittelt: return -1 -> "im else-Zweig"', () => {
+    test('Sonst-Zweig: "Sonst-Zweig, in if-Anweisung, in Methode calculate, Klasse MathLogic"', () => {
         assert.strictEqual(
-            buildContextString(returnMinus1),
-            'return-Anweisung, im else-Zweig, in Methode calculate, Klasse MathLogic'
+            buildContextString(at('else-branch', 9)),
+            'Sonst-Zweig, in if-Anweisung, in Methode calculate, Klasse MathLogic'
+        );
+    });
+
+    test('return -1 (im Sonst-Zweig): Skopus wird vermittelt, if nicht doppelt genannt', () => {
+        assert.strictEqual(
+            buildContextString(at('return', 10)),
+            'return-Anweisung, im Sonst-Zweig, in Methode calculate, Klasse MathLogic'
         );
     });
 
     test('for-Schleife nennt Zweig, Methode und Klasse', () => {
         assert.strictEqual(
-            buildContextString(forNode),
-            'for-Schleife, im if-Zweig, in Methode calculate, Klasse MathLogic'
+            buildContextString(at('for', 4)),
+            'for-Schleife, im Dann-Zweig, in Methode calculate, Klasse MathLogic'
         );
     });
 
-    test('Methode (selbst): "Methode calculate, Klasse MathLogic"', () => {
-        assert.strictEqual(buildContextString(method), 'Methode calculate, Klasse MathLogic');
-    });
-
-    test('Klasse (selbst, oberste Ebene): "Klasse MathLogic"', () => {
-        assert.strictEqual(buildContextString(classDecl), 'Klasse MathLogic');
-    });
-
-    suite('describeNode (Selbst-Beschreibung)', () => {
-        test('then-block des if -> "if-Zweig"', () => {
-            const thenBlock = outerIf.childForFieldName('consequence')!;
-            assert.strictEqual(describeNode(thenBlock), 'if-Zweig');
+    suite('describeOutlineNode (Selbst-Beschreibung)', () => {
+        test('then-/else-Zweig heißen Dann-Zweig / Sonst-Zweig', () => {
+            assert.strictEqual(describeOutlineNode(at('then-branch', 3)), 'Dann-Zweig');
+            assert.strictEqual(describeOutlineNode(at('else-branch', 9)), 'Sonst-Zweig');
         });
-
-        test('alternative-block des if -> "else-Zweig"', () => {
-            assert.strictEqual(describeNode(elseBlock), 'else-Zweig');
+        test('if heißt if-Anweisung', () => {
+            assert.strictEqual(describeOutlineNode(at('if', 3)), 'if-Anweisung');
         });
-
-        test('Methode bekommt ihren Namen angehängt', () => {
-            assert.strictEqual(describeNode(method), 'Methode calculate');
-        });
-    });
-
-    suite('Sonderfälle (kein leerer String, kein Absturz)', () => {
-        test('Lambda-Ausdruck -> beginnt mit "Lambda-Ausdruck"', () => {
-            const lambdaRoot = parseJava(
-                'class C { Runnable r = () -> { System.out.println(1); }; }'
-            ).rootNode;
-            const lambda = findFirstOfType(lambdaRoot, 'lambda_expression')!;
-            const result = buildContextString(lambda);
-            assert.ok(result.startsWith('Lambda-Ausdruck'), result);
-        });
-
-        test('anonyme innere Klasse -> "anonyme Klasse"', () => {
-            const anonRoot = parseJava(
-                'class C { Runnable r = new Runnable(){ public void run(){} }; }'
-            ).rootNode;
-            const anon = findFirstOfType(anonRoot, 'object_creation_expression')!;
-            assert.strictEqual(describeNode(anon), 'anonyme Klasse');
-        });
-
-        test('unbekannter Knotentyp liefert nicht-leeren String', () => {
-            const cond = outerIf.childForFieldName('condition')!;
-            assert.ok(buildContextString(cond).length > 0);
+        test('Methode bekommt ihren Namen', () => {
+            assert.strictEqual(describeOutlineNode(at('method', 2)), 'Methode calculate');
         });
     });
 });

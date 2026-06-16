@@ -1,210 +1,229 @@
 import type Parser = require('tree-sitter');
 
 /**
- * Reine AST-Traversal-Logik (Komponente "Navigator", siehe Kap. 4.1).
+ * Navigations-Logik (Komponente "Navigator", Kap. 4.1/4.2).
  *
- * Diese Funktionen kennen weder VS Code noch den Editor. Sie nehmen einen
- * tree-sitter-Knoten entgegen und liefern den Zielknoten der jeweiligen
- * Navigationsrichtung oder `null`, wenn es kein Ziel gibt (Edge Case).
+ * Modell: EIN kanonischer "Outline-Baum" (Code-Gliederung) aus bedeutungstragenden
+ * Knoten. Dieser Baum treibt sowohl die Navigation als auch (über contextSpeech) die
+ * Sprachausgabe — „was man navigiert" = „was man hört".
  *
- * --- Meaningful-Node-Whitelist (Designentscheidung M2/Kap. 4.2) ---
- * Navigation stoppt NUR auf strukturell bedeutungstragenden Knoten (Klasse,
- * Methode, if, else-Zweig, Schleifen, return, Variablendeklaration,
- * Anweisung/Methodenaufruf, …). Alles andere (binary_expression, modifiers,
- * field_access, identifier, parenthesized_expression …) ist für blinde
- * Anfänger:innen Rauschen und wird übersprungen — analog zu StructJumper, das die
- * logische Hierarchie statt der Syntaxdetails navigiert.
+ * Tastenmodell (StructJumper-Gliederung, Kap. 2.3):
+ *   - Alt+↓ / Alt+↑ : nächster / vorheriger Knoten in LESEREIHENFOLGE (linearisierte
+ *                     Vorordnung der Gliederung) — siehe navDown/navUp.
+ *   - Alt+→ / Alt+← : eine Verschachtelungsebene HINEIN / HERAUS — siehe navIn/navOut.
  *
- * Modell: Navigation operiert auf dem "meaningful tree" — dem auf die Whitelist
- * eingeschränkten Baum. Nicht-bedeutungstragende Knoten sind transparent: ihre
- * bedeutungstragenden Nachfahren rücken an ihre Stelle. Dadurch gilt:
- *   - parent/child sind echte Inverse (Down dann Up landet wieder am Start),
- *   - der else-Zweig ist ein eigener Stopp (siehe isMeaningful),
- *   - der Skopus bleibt erhalten und wird in M3 hörbar gemacht.
+ * Aufbauregeln des Outline-Baums (siehe buildOutline):
+ *   - Stopps sind nur bedeutungstragende Knoten (STOP_KINDS). Bedingungen, Ausdrücke,
+ *     Bezeichner, Modifier, Köpfe (for-Init/-Update, Parameter) sind KEINE Stopps.
+ *   - In einen Knoten wird nur über seinen RUMPF abgestiegen (body-Feld bzw. bei if die
+ *     Zweige) — niemals über Kopf-Teile. Dadurch ist „hinein" immer der Rumpf.
+ *   - if ist SYMMETRISCH: if → [Dann-Zweig, Sonst-Zweig] (Sonst nur wenn vorhanden).
  */
 
-/** Knotentyp der tree-sitter-java-Wurzel. */
-const ROOT_TYPE = 'program';
+export type OutlineKind =
+    | 'class' | 'interface' | 'enum'
+    | 'method' | 'constructor' | 'field'
+    | 'if' | 'then-branch' | 'else-branch'
+    | 'for' | 'foreach' | 'while' | 'do'
+    | 'switch' | 'try' | 'catch' | 'finally' | 'sync' | 'labeled'
+    | 'return' | 'break' | 'continue' | 'throw' | 'yield' | 'assert'
+    | 'variable' | 'statement' | 'lambda';
+
+export interface OutlineNode {
+    /** AST-Knoten, auf den der Cursor gesetzt wird. */
+    astNode: Parser.SyntaxNode;
+    kind: OutlineKind;
+    parent: OutlineNode | null;
+    children: OutlineNode[];
+    /** Position in der linearisierten Vorordnung (für Alt+↓/↑). */
+    index: number;
+}
+
+export interface Outline {
+    /** Alle Knoten in Vorordnung (Lesereihenfolge). */
+    linear: OutlineNode[];
+    /** AST-Knoten-id → Outline-Knoten (zum Auffinden über die Cursorposition). */
+    byAstId: Map<number, OutlineNode>;
+}
+
+/** AST-Knotentyp → Outline-Art (Stopp), oder undefined = kein Stopp (transparent). */
+const STOP_KINDS: Record<string, OutlineKind> = {
+    class_declaration: 'class',
+    record_declaration: 'class',
+    interface_declaration: 'interface',
+    annotation_type_declaration: 'interface',
+    enum_declaration: 'enum',
+    method_declaration: 'method',
+    constructor_declaration: 'constructor',
+    compact_constructor_declaration: 'constructor',
+    field_declaration: 'field',
+    if_statement: 'if',
+    for_statement: 'for',
+    enhanced_for_statement: 'foreach',
+    while_statement: 'while',
+    do_statement: 'do',
+    switch_statement: 'switch',
+    switch_expression: 'switch',
+    try_statement: 'try',
+    try_with_resources_statement: 'try',
+    catch_clause: 'catch',
+    finally_clause: 'finally',
+    synchronized_statement: 'sync',
+    labeled_statement: 'labeled',
+    return_statement: 'return',
+    break_statement: 'break',
+    continue_statement: 'continue',
+    throw_statement: 'throw',
+    yield_statement: 'yield',
+    assert_statement: 'assert',
+    local_variable_declaration: 'variable',
+    expression_statement: 'statement',
+    lambda_expression: 'lambda',
+};
+
+function stopKindOf(node: Parser.SyntaxNode): OutlineKind | null {
+    return STOP_KINDS[node.type] ?? null;
+}
 
 /**
- * Bedeutungstragende Knotentypen (Navigationsziele). `block` ist NICHT enthalten;
- * der else-Zweig (alternative-block) wird in isMeaningful gesondert ergänzt.
+ * Baut den Outline-Baum aus der AST-Wurzel. Die Reihenfolge der Erzeugung ist die
+ * Vorordnung (Lesereihenfolge) und füllt `linear`.
  */
-const MEANINGFUL_TYPES = new Set<string>([
-    // Typdeklarationen
-    'class_declaration',
-    'interface_declaration',
-    'enum_declaration',
-    'record_declaration',
-    'annotation_type_declaration',
-    // Member
-    'method_declaration',
-    'constructor_declaration',
-    'compact_constructor_declaration',
-    'field_declaration',
-    // Kontrollstrukturen
-    'if_statement',
-    'for_statement',
-    'enhanced_for_statement',
-    'while_statement',
-    'do_statement',
-    'switch_statement',
-    'switch_expression',
-    'try_statement',
-    'try_with_resources_statement',
-    'catch_clause',
-    'finally_clause',
-    'synchronized_statement',
-    'labeled_statement',
-    // Anweisungen
-    'return_statement',
-    'break_statement',
-    'continue_statement',
-    'throw_statement',
-    'yield_statement',
-    'assert_statement',
-    'local_variable_declaration',
-    'expression_statement', // u. a. Methodenaufruf-Anweisung, Zuweisung
-    // Sonstiges
-    'lambda_expression',
-]);
+export function buildOutline(root: Parser.SyntaxNode): Outline {
+    const linear: OutlineNode[] = [];
+    const byAstId = new Map<number, OutlineNode>();
+
+    function emit(
+        astNode: Parser.SyntaxNode,
+        kind: OutlineKind,
+        parent: OutlineNode | null
+    ): OutlineNode {
+        const node: OutlineNode = { astNode, kind, parent, children: [], index: linear.length };
+        linear.push(node);
+        if (!byAstId.has(astNode.id)) {
+            byAstId.set(astNode.id, node);
+        }
+        if (parent) {
+            parent.children.push(node);
+        }
+        return node;
+    }
+
+    /** Durchsucht die benannten Kinder eines transparenten Containers nach Stopps. */
+    function scan(container: Parser.SyntaxNode, parent: OutlineNode | null): void {
+        for (const child of container.namedChildren) {
+            classify(child, parent);
+        }
+    }
+
+    /** Ist der Knoten ein Stopp → Outline-Knoten erzeugen + Rumpf bauen; sonst transparent absteigen. */
+    function classify(astNode: Parser.SyntaxNode, parent: OutlineNode | null): void {
+        const kind = stopKindOf(astNode);
+        if (kind === null) {
+            for (const child of astNode.namedChildren) {
+                classify(child, parent);
+            }
+            return;
+        }
+        const node = emit(astNode, kind, parent);
+        buildBody(astNode, kind, node);
+    }
+
+    /** Erzeugt die Outline-Kinder eines Stopps (nur aus dem Rumpf, nie aus dem Kopf). */
+    function buildBody(astNode: Parser.SyntaxNode, kind: OutlineKind, node: OutlineNode): void {
+        if (kind === 'if') {
+            buildBranch(astNode.childForFieldName('consequence'), 'then-branch', node);
+            buildBranch(astNode.childForFieldName('alternative'), 'else-branch', node);
+            return;
+        }
+        if (kind === 'try') {
+            descendBody(astNode.childForFieldName('body'), node);
+            for (const child of astNode.namedChildren) {
+                if (child.type === 'catch_clause' || child.type === 'finally_clause') {
+                    classify(child, node);
+                }
+            }
+            return;
+        }
+        const body = astNode.childForFieldName('body');
+        if (body) {
+            descendBody(body, node);
+            return;
+        }
+        // Einfache Anweisungen (return, Anweisung, Variablendeklaration, …): nach
+        // verschachtelten Stopps (z. B. Lambdas) durchsuchen — meist keine.
+        for (const child of astNode.namedChildren) {
+            classify(child, node);
+        }
+    }
+
+    /** Steigt in einen Rumpf ab: block transparent (Anweisungen), sonst die Einzelanweisung. */
+    function descendBody(body: Parser.SyntaxNode | null, parent: OutlineNode): void {
+        if (!body) { return; }
+        if (body.type === 'block') {
+            scan(body, parent);
+        } else {
+            classify(body, parent);
+        }
+    }
+
+    /** Baut einen if-Zweig: ein Block wird zum Zweig-Knoten (Dann-/Sonst-Zweig);
+     *  ein klammerloser Zweig oder `else if` wird direkt unter das if gehängt. */
+    function buildBranch(
+        branch: Parser.SyntaxNode | null,
+        kind: OutlineKind,
+        parent: OutlineNode
+    ): void {
+        if (!branch) { return; }
+        if (branch.type === 'block') {
+            const node = emit(branch, kind, parent);
+            scan(branch, node);
+        } else {
+            classify(branch, parent);
+        }
+    }
+
+    for (const child of root.namedChildren) {
+        classify(child, null);
+    }
+    return { linear, byAstId };
+}
 
 /**
- * Zweig-Art eines block-Knotens: 'else' wenn er der `alternative`-Zweig eines if
- * ist, 'then' wenn `consequence`, sonst null. (tree-sitter-java kennt keinen
- * else_clause-Knoten; der else-Zweig ist der zweite block, Feld `alternative`.)
+ * Outline-Knoten zur (Cursor-)Position: vom AST-Knoten nach oben laufen bis ein
+ * Knoten mit Outline-Eintrag gefunden ist (nächster umschließender Stopp). Ein
+ * Cursor in einem Kopf (z. B. der for-Init) landet so auf der zugehörigen
+ * Kontrollstruktur.
  */
-export function ifBranchKind(block: Parser.SyntaxNode): 'else' | 'then' | null {
-    const parent = block.parent;
-    if (!parent || parent.type !== 'if_statement') {
-        return null;
-    }
-    if (parent.childForFieldName('alternative')?.id === block.id) {
-        return 'else';
-    }
-    if (parent.childForFieldName('consequence')?.id === block.id) {
-        return 'then';
+export function outlineNodeFor(
+    outline: Outline,
+    astNode: Parser.SyntaxNode
+): OutlineNode | null {
+    let current: Parser.SyntaxNode | null = astNode;
+    while (current) {
+        const node = outline.byAstId.get(current.id);
+        if (node) { return node; }
+        current = current.parent;
     }
     return null;
 }
 
-/** Ist `node` ein Navigationsziel (bedeutungstragend)? */
-export function isMeaningful(node: Parser.SyntaxNode): boolean {
-    if (MEANINGFUL_TYPES.has(node.type)) {
-        return true;
-    }
-    // Der else-Zweig ist ein eigenständiger sinnvoller Stopp (der then-Zweig
-    // dagegen ist transparent — er ist der Standard-Rumpf des if).
-    if (node.type === 'block' && ifBranchKind(node) === 'else') {
-        return true;
-    }
-    return false;
+/** Alt+↓ — nächster Knoten in Lesereihenfolge. */
+export function navDown(outline: Outline, node: OutlineNode): OutlineNode | null {
+    return outline.linear[node.index + 1] ?? null;
 }
 
-/**
- * Die bedeutungstragenden Kinder im meaningful tree: bedeutungstragende Kinder
- * werden übernommen, nicht-bedeutungstragende durch ihre eigenen (rekursiv
- * ermittelten) bedeutungstragenden Nachfahren ersetzt.
- */
-function meaningfulChildren(node: Parser.SyntaxNode): Parser.SyntaxNode[] {
-    const result: Parser.SyntaxNode[] = [];
-    for (const child of node.namedChildren) {
-        if (isMeaningful(child)) {
-            result.push(child);
-        } else {
-            result.push(...meaningfulChildren(child));
-        }
-    }
-    return result;
+/** Alt+↑ — vorheriger Knoten in Lesereihenfolge. */
+export function navUp(outline: Outline, node: OutlineNode): OutlineNode | null {
+    return outline.linear[node.index - 1] ?? null;
 }
 
-/** Nächster bedeutungstragender Vorfahr (oder null). */
-function meaningfulParent(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
-    let parent = node.parent;
-    while (parent && !isMeaningful(parent)) {
-        parent = parent.parent;
-    }
-    return parent ?? null;
+/** Alt+→ — eine Ebene hinein (erstes Kind). */
+export function navIn(node: OutlineNode): OutlineNode | null {
+    return node.children[0] ?? null;
 }
 
-/** Wurzelknoten (program) durch Hochlaufen. */
-function rootOf(node: Parser.SyntaxNode): Parser.SyntaxNode {
-    let current = node;
-    while (current.parent) {
-        current = current.parent;
-    }
-    return current;
-}
-
-/** Index von `node` (per stabiler tree-sitter-id) in einer Knotenliste. */
-function indexById(nodes: Parser.SyntaxNode[], node: Parser.SyntaxNode): number {
-    return nodes.findIndex(n => n.id === node.id);
-}
-
-/**
- * Container für Geschwister: der bedeutungstragende Elternknoten, oder — für
- * Top-Level-Deklarationen — die Programmwurzel.
- */
-function siblingContainer(node: Parser.SyntaxNode): Parser.SyntaxNode {
-    return meaningfulParent(node) ?? rootOf(node);
-}
-
-/**
- * Normalisiert einen (Cursor-)Knoten auf den nächsten bedeutungstragenden Knoten,
- * indem nach oben gelaufen wird. Liegt der Cursor z. B. in einer Bedingung
- * (binary_expression), landet man auf der umschließenden if-Anweisung.
- * Liefert null, wenn es keinen bedeutungstragenden Vorfahren gibt (z. B. leeres Programm).
- */
-export function toMeaningfulNode(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
-    let current: Parser.SyntaxNode | null = node;
-    while (current && !isMeaningful(current)) {
-        current = current.parent;
-    }
-    return current;
-}
-
-/**
- * Elternknoten im meaningful tree ("hoch im Baum", Alt+Up).
- * Liefert null, wenn der Knoten auf oberster Ebene liegt.
- */
-export function findParent(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
-    const parent = meaningfulParent(node);
-    if (!parent || parent.type === ROOT_TYPE) {
-        return null;
-    }
-    return parent;
-}
-
-/**
- * Erstes bedeutungstragendes Kind ("rein in den Block", Alt+Down).
- * Liefert null, wenn es kein bedeutungstragendes Kind gibt (Blatt-Anweisung).
- */
-export function findFirstChild(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
-    return meaningfulChildren(node)[0] ?? null;
-}
-
-/**
- * Nächstes bedeutungstragendes Geschwister ("weiter auf gleicher Ebene", Alt+Right).
- * Liefert null, wenn es kein weiteres gibt.
- */
-export function findNextSibling(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
-    const siblings = meaningfulChildren(siblingContainer(node));
-    const index = indexById(siblings, node);
-    if (index === -1) {
-        return null;
-    }
-    return siblings[index + 1] ?? null;
-}
-
-/**
- * Vorheriges bedeutungstragendes Geschwister ("zurück auf gleicher Ebene", Alt+Left).
- * Liefert null, wenn es kein vorheriges gibt.
- */
-export function findPrevSibling(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
-    const siblings = meaningfulChildren(siblingContainer(node));
-    const index = indexById(siblings, node);
-    if (index <= 0) {
-        return null;
-    }
-    return siblings[index - 1] ?? null;
+/** Alt+← — eine Ebene heraus (Elternknoten). */
+export function navOut(node: OutlineNode): OutlineNode | null {
+    return node.parent;
 }

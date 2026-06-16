@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import type Parser = require('tree-sitter');
-import { buildContextString, describeNode } from './contextSpeech';
+import type { OutlineNode } from './navigator';
+import { buildContextString, describeOutlineNode } from './contextSpeech';
 
 /**
  * Sprachausgabe-Schicht (VS-Code-Adapter für ContextSpeech, Kap. 4.3/5.3).
@@ -110,14 +110,14 @@ export class SpeechController implements vscode.Disposable {
     }
 
     /** Aktualisiert nur die Statusleiste (für die Versuchsleiterin), keine Sprache. */
-    showStatus(node: Parser.SyntaxNode): void {
-        this.statusBar.text = `BCNav: ${describeNode(node)}`;
+    showStatus(node: OutlineNode): void {
+        this.statusBar.text = `BCNav: ${describeOutlineNode(node)}`;
     }
 
     /** Spricht den vollständigen Kontext und aktualisiert die Statusleiste. */
-    announce(node: Parser.SyntaxNode): void {
+    announce(node: OutlineNode): void {
         const text = buildContextString(node);
-        this.statusBar.text = `BCNav: ${describeNode(node)}`;
+        this.statusBar.text = `BCNav: ${describeOutlineNode(node)}`;
         this.announcer.announce(text);
     }
 

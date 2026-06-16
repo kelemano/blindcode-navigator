@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
-import { getAST, getNamedNodeAtCursor, invalidateCache } from './parser';
-import { toMeaningfulNode } from './navigator';
+import { invalidateCache } from './parser';
 import {
-    navigateToParent,
-    navigateToFirstChild,
-    navigateToNextSibling,
-    navigateToPrevSibling,
+    navigateUp,
+    navigateDown,
+    navigateIn,
+    navigateOut,
+    outlineNodeAtCursor,
 } from './editorNavigation';
 import { SpeechController } from './speech';
 
@@ -24,13 +24,12 @@ export function activate(context: vscode.ExtensionContext) {
             statusBar.text = '';
             return;
         }
-        const tree = getAST(editor.document);
-        const position = editor.selection.active;
-        const node = toMeaningfulNode(getNamedNodeAtCursor(tree, position));
+        const node = outlineNodeAtCursor(editor);
         if (!node) { return; }
         // Statusleiste für die Versuchsleiterin; gesprochen wird nur bei Navigation.
         speech.showStatus(node);
-        outputChannel.appendLine(`${position.line + 1}:${position.character + 1}  ${node.type}`);
+        const pos = node.astNode.startPosition;
+        outputChannel.appendLine(`${pos.row + 1}:${pos.column + 1}  ${node.kind} (${node.astNode.type})`);
     }
 
     function onDocumentChange(event: vscode.TextDocumentChangeEvent): void {
@@ -70,20 +69,20 @@ export function activate(context: vscode.ExtensionContext) {
             invalidateCache(doc.uri.toString());
         }),
         vscode.commands.registerCommand(
-            'blindcode-navigator.navigateToParent',
-            withJavaEditor(navigateToParent)
+            'blindcode-navigator.navigateDown',
+            withJavaEditor(navigateDown)
         ),
         vscode.commands.registerCommand(
-            'blindcode-navigator.navigateToFirstChild',
-            withJavaEditor(navigateToFirstChild)
+            'blindcode-navigator.navigateUp',
+            withJavaEditor(navigateUp)
         ),
         vscode.commands.registerCommand(
-            'blindcode-navigator.navigateToNextSibling',
-            withJavaEditor(navigateToNextSibling)
+            'blindcode-navigator.navigateIn',
+            withJavaEditor(navigateIn)
         ),
         vscode.commands.registerCommand(
-            'blindcode-navigator.navigateToPrevSibling',
-            withJavaEditor(navigateToPrevSibling)
+            'blindcode-navigator.navigateOut',
+            withJavaEditor(navigateOut)
         ),
         vscode.commands.registerCommand('blindcode-navigator.helloWorld', () => {
             outputChannel.show();
