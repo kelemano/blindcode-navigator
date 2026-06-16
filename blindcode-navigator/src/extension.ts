@@ -3,8 +3,9 @@ import { invalidateCache } from './parser';
 import {
     navigateUp,
     navigateDown,
-    navigateIn,
+    navigateNextSibling,
     navigateOut,
+    showOutline,
     outlineNodeAtCursor,
 } from './editorNavigation';
 import { SpeechController } from './speech';
@@ -77,12 +78,16 @@ export function activate(context: vscode.ExtensionContext) {
             withJavaEditor(navigateUp)
         ),
         vscode.commands.registerCommand(
-            'blindcode-navigator.navigateIn',
-            withJavaEditor(navigateIn)
+            'blindcode-navigator.navigateNextSibling',
+            withJavaEditor(navigateNextSibling)
         ),
         vscode.commands.registerCommand(
             'blindcode-navigator.navigateOut',
             withJavaEditor(navigateOut)
+        ),
+        vscode.commands.registerCommand(
+            'blindcode-navigator.showOutline',
+            withJavaEditor(showOutline)
         ),
         vscode.commands.registerCommand('blindcode-navigator.helloWorld', () => {
             outputChannel.show();

@@ -43,12 +43,16 @@
         "title": "BCNav: Vorheriger Knoten (Lesereihenfolge)"
       },
       {
-        "command": "blindcode-navigator.navigateIn",
-        "title": "BCNav: Eine Ebene hinein"
+        "command": "blindcode-navigator.navigateNextSibling",
+        "title": "BCNav: Nächstes Geschwister (Block überspringen)"
       },
       {
         "command": "blindcode-navigator.navigateOut",
         "title": "BCNav: Eine Ebene heraus"
+      },
+      {
+        "command": "blindcode-navigator.showOutline",
+        "title": "BCNav: Gliederung anzeigen / zu Knoten springen"
       }
     ],
     "keybindings": [
@@ -63,13 +67,18 @@
         "when": "editorTextFocus && editorLangId == 'java'"
       },
       {
-        "command": "blindcode-navigator.navigateIn",
+        "command": "blindcode-navigator.navigateNextSibling",
         "key": "alt+right",
         "when": "editorTextFocus && editorLangId == 'java'"
       },
       {
         "command": "blindcode-navigator.navigateOut",
         "key": "alt+left",
+        "when": "editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.showOutline",
+        "key": "alt+o",
         "when": "editorTextFocus && editorLangId == 'java'"
       }
     ]

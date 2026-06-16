@@ -3,22 +3,26 @@ import { getAST, getNamedNodeAtCursor } from './parser';
 import {
     buildOutline,
     outlineNodeFor,
+    outlineDepth,
     navDown,
     navUp,
-    navIn,
+    navNextSibling,
     navOut,
     Outline,
     OutlineNode,
 } from './navigator';
+import { describeOutlineNode } from './contextSpeech';
 import type { SpeechController } from './speech';
 
 /**
- * VS-Code-Adapter für die Outline-Navigation (Kap. 5.3). Baut pro Tastendruck den
+ * VS-Code-Adapter für die Outline-Navigation (Kap. 5.3). Baut pro Aktion den
  * Outline-Baum (klein, < 500 LOC → vernachlässigbar), findet den Knoten an der
  * Cursorposition, wendet die Richtung an, bewegt den Cursor und spricht den Kontext.
  *
- * Tastenbelegung (StructJumper-Gliederung):
- *   Alt+↓ navigateDown · Alt+↑ navigateUp · Alt+→ navigateIn · Alt+← navigateOut
+ * Tastenmodell (Variante 3):
+ *   Alt+↓ navigateDown · Alt+↑ navigateUp  (Lesereihenfolge)
+ *   Alt+→ navigateNextSibling (Block überspringen) · Alt+← navigateOut (heraus)
+ *   Alt+O showOutline (Gliederungs-Liste → frei zu jedem Knoten springen)
  */
 
 /** Outline-Knoten an der aktuellen Cursorposition (oder null). */
@@ -78,12 +82,45 @@ export function navigateUp(editor: vscode.TextEditor, speech: SpeechController):
     go(editor, speech, (outline, node) => navUp(outline, node), 'Anfang des Codes erreicht');
 }
 
-/** Alt+→ — eine Ebene hinein (erstes Kind). */
-export function navigateIn(editor: vscode.TextEditor, speech: SpeechController): void {
-    go(editor, speech, (_outline, node) => navIn(node), 'Keine tiefere Ebene');
+/** Alt+→ — nächstes Geschwister (Block überspringen). */
+export function navigateNextSibling(editor: vscode.TextEditor, speech: SpeechController): void {
+    go(editor, speech, (outline, node) => navNextSibling(outline, node), 'Kein weiterer Knoten auf dieser Ebene');
 }
 
 /** Alt+← — eine Ebene heraus (Elternknoten). */
 export function navigateOut(editor: vscode.TextEditor, speech: SpeechController): void {
     go(editor, speech, (_outline, node) => navOut(node), 'Oberste Ebene erreicht');
+}
+
+interface OutlineQuickPickItem extends vscode.QuickPickItem {
+    node: OutlineNode;
+}
+
+/**
+ * Alt+O — Gliederungs-Liste (StructJumper-Analog). Zeigt alle Outline-Knoten in
+ * Lesereihenfolge als barrierefreie QuickPick. Tippen filtert, Enter springt zum Knoten.
+ */
+export async function showOutline(
+    editor: vscode.TextEditor,
+    speech: SpeechController
+): Promise<void> {
+    const tree = getAST(editor.document);
+    const outline = buildOutline(tree.rootNode);
+    if (outline.linear.length === 0) {
+        vscode.window.showInformationMessage('Keine Code-Struktur in dieser Datei');
+        return;
+    }
+    const items: OutlineQuickPickItem[] = outline.linear.map(node => ({
+        label: `${'    '.repeat(outlineDepth(node))}${describeOutlineNode(node)}`,
+        description: `Zeile ${node.astNode.startPosition.row + 1}`,
+        node,
+    }));
+    const picked = await vscode.window.showQuickPick(items, {
+        placeHolder: 'Zu Knoten springen … (tippen zum Filtern, z. B. else, for, return)',
+        matchOnDescription: true,
+    });
+    if (picked) {
+        moveToNode(editor, picked.node);
+        speech.announce(picked.node);
+    }
 }

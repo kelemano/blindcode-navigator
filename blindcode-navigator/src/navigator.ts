@@ -218,7 +218,8 @@ export function navUp(outline: Outline, node: OutlineNode): OutlineNode | null {
     return outline.linear[node.index - 1] ?? null;
 }
 
-/** Alt+→ — eine Ebene hinein (erstes Kind). */
+/** Eine Ebene hinein (erstes Kind). Wird aktuell nicht auf eine Taste gelegt,
+ *  ist aber als reine Baum-Operation für Tests/künftige Nutzung exportiert. */
 export function navIn(node: OutlineNode): OutlineNode | null {
     return node.children[0] ?? null;
 }
@@ -226,4 +227,28 @@ export function navIn(node: OutlineNode): OutlineNode | null {
 /** Alt+← — eine Ebene heraus (Elternknoten). */
 export function navOut(node: OutlineNode): OutlineNode | null {
     return node.parent;
+}
+
+/** Geschwister eines Knotens (Top-Level: die Wurzeln der Gliederung). */
+function siblingsOf(outline: Outline, node: OutlineNode): OutlineNode[] {
+    return node.parent ? node.parent.children : outline.linear.filter(n => !n.parent);
+}
+
+/** Alt+→ — nächstes Geschwister (überspringt den ganzen Block des aktuellen Knotens). */
+export function navNextSibling(outline: Outline, node: OutlineNode): OutlineNode | null {
+    const siblings = siblingsOf(outline, node);
+    const index = siblings.indexOf(node);
+    if (index === -1) { return null; }
+    return siblings[index + 1] ?? null;
+}
+
+/** Verschachtelungstiefe (Wurzel = 0) — für die Einrückung in der Gliederungs-Liste. */
+export function outlineDepth(node: OutlineNode): number {
+    let depth = 0;
+    let current = node.parent;
+    while (current) {
+        depth += 1;
+        current = current.parent;
+    }
+    return depth;
 }

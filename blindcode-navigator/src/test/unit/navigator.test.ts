@@ -2,10 +2,12 @@ import * as assert from 'assert';
 import {
     buildOutline,
     outlineNodeFor,
+    outlineDepth,
     navDown,
     navUp,
     navIn,
     navOut,
+    navNextSibling,
     Outline,
     OutlineNode,
 } from '../../navigator';
@@ -136,6 +138,35 @@ suite('navigator — Outline-Modell (StructJumper-Gliederung)', () => {
             ]) {
                 assert.ok(!kinds.has(noise), `${noise} sollte kein Outline-Knoten sein`);
             }
+        });
+    });
+
+    suite('Alt+→ navNextSibling (Block überspringen)', () => {
+        test('Dann-Zweig → Sonst-Zweig (then → else in einer Taste)', () => {
+            assert.strictEqual(navNextSibling(outline, at('then-branch', 3))?.kind, 'else-branch');
+        });
+        test('äußere if-Anweisung → return x (ganzes if überspringen)', () => {
+            const next = navNextSibling(outline, at('if', 3));
+            assert.strictEqual(next?.kind, 'return');
+            assert.strictEqual(next?.astNode.startPosition.row, 11); // return x, Zeile 12
+        });
+        test('Edge: println hat kein nächstes Geschwister', () => {
+            assert.strictEqual(navNextSibling(outline, first('statement')), null);
+        });
+        test('Edge: einzige Top-Level-Klasse hat kein Geschwister', () => {
+            assert.strictEqual(navNextSibling(outline, first('class')), null);
+        });
+    });
+
+    suite('outlineDepth (für die Gliederungs-Liste)', () => {
+        test('Tiefen entsprechen der Verschachtelung', () => {
+            assert.strictEqual(outlineDepth(first('class')), 0);
+            assert.strictEqual(outlineDepth(first('method')), 1);
+            assert.strictEqual(outlineDepth(at('if', 3)), 2);
+            assert.strictEqual(outlineDepth(at('then-branch', 3)), 3);
+            assert.strictEqual(outlineDepth(first('statement')), 7);
+            assert.strictEqual(outlineDepth(at('else-branch', 9)), 3);
+            assert.strictEqual(outlineDepth(at('return', 12)), 2);
         });
     });
 
