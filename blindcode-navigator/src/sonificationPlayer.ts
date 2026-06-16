@@ -73,8 +73,31 @@ export class SonificationController implements vscode.Disposable {
             { enableScripts: true, retainContextWhenHidden: true }
         );
         this.panel.webview.html = this.html();
+        this.panel.webview.onDidReceiveMessage(message => {
+            if (message?.type === 'ready') {
+                this.postConfig();
+            } else if (message?.type === 'setDepthMode' && typeof message.mode === 'string') {
+                void vscode.workspace
+                    .getConfiguration('blindcode.sonification')
+                    .update('depthMode', message.mode, vscode.ConfigurationTarget.Global)
+                    .then(() => this.postConfig());
+            }
+        });
         this.panel.onDidDispose(() => { this.panel = undefined; });
         return this.panel.webview;
+    }
+
+    /** Sendet den aktuellen Tiefen-Modus an das Panel (Auswahl synchron halten). */
+    private postConfig(): void {
+        this.panel?.webview.postMessage({
+            type: 'config',
+            depthMode: depthConfigFromSettings().depthMode,
+        });
+    }
+
+    /** Wird vom Konfigurations-Listener aufgerufen, falls sich die Einstellungen ändern. */
+    refreshConfig(): void {
+        this.postConfig();
     }
 
     dispose(): void {
@@ -92,9 +115,16 @@ export class SonificationController implements vscode.Disposable {
 <style nonce="${nonce}">
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 10px; }
   h2 { font-size: 1em; margin: 0 0 6px; }
+  h3 { font-size: .9em; margin: 14px 0 4px; }
   p { color: var(--vscode-descriptionForeground); }
   #last { font-size: 1.4em; margin: 8px 0; }
   button { font: inherit; padding: 4px 10px; }
+  label { display: block; margin: 6px 0 2px; }
+  select { font: inherit; padding: 3px; min-width: 16em; }
+  .row { margin: 8px 0; }
+  code { background: var(--vscode-textCodeBlock-background); padding: 0 4px; border-radius: 3px; }
+  pre { background: var(--vscode-textCodeBlock-background); padding: 8px; border-radius: 4px; overflow:auto; }
+  .muted { color: var(--vscode-descriptionForeground); font-size: .9em; }
 </style>
 </head>
 <body>
@@ -103,6 +133,29 @@ export class SonificationController implements vscode.Disposable {
 <div id="last">—</div>
 <p id="hint"></p>
 <button id="enable" type="button">Audio aktivieren</button>
+
+<div class="row">
+  <label for="depthMode">Tiefen-Modus (welche Knoten als Ebene zählen):</label>
+  <select id="depthMode">
+    <option value="control">control — nur Kontrollstrukturen (Standard) · println = Tiefe 4 (550 Hz)</option>
+    <option value="control-and-methods">control-and-methods — + Methode · println = 5 (660 Hz)</option>
+    <option value="full-scope">full-scope — Klasse + Methode · println = 6 (880 Hz)</option>
+  </select>
+  <p class="muted">Ändert nur die Tonhöhe — Baumansicht und Sprachausgabe bleiben gleich.
+  Für die Studie den Standard <code>control</code> lassen.</p>
+</div>
+
+<h3>Auch per Einstellungen / Terminal</h3>
+<p class="muted">Einstellungen-UI: <code>⌘,</code> → nach <code>blindcode.sonification.depthMode</code> suchen.<br>
+settings.json (Befehlspalette <code>⌘⇧P</code> → „Preferences: Open User Settings (JSON)") bzw. per Terminal in die Datei schreiben:</p>
+<pre>{
+  "blindcode.sonification.depthMode": "control",
+  "blindcode.sonification.customDepthNodeTypes": ["if_statement","for_statement"]
+}</pre>
+<p class="muted">macOS-Pfad: <code>~/Library/Application Support/Code/User/settings.json</code>
+(Insiders: <code>Code - Insiders</code>). <code>customDepthNodeTypes</code> überschreibt den Modus
+(nur die gelisteten tree-sitter-Knotentypen zählen). Ton an/aus: <code>Alt+S</code>.</p>
+
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   let ctx;
@@ -143,7 +196,17 @@ export class SonificationController implements vscode.Disposable {
     ensureCtx();
     document.getElementById('hint').textContent = '';
   });
-  window.addEventListener('message', e => { if (e.data && e.data.type === 'tone') { onTone(e.data); } });
+  const depthModeSelect = document.getElementById('depthMode');
+  depthModeSelect.addEventListener('change', () => {
+    vscode.postMessage({ type: 'setDepthMode', mode: depthModeSelect.value });
+  });
+  window.addEventListener('message', e => {
+    const m = e.data;
+    if (!m) { return; }
+    if (m.type === 'tone') { onTone(m); }
+    else if (m.type === 'config') { depthModeSelect.value = m.depthMode; }
+  });
+  vscode.postMessage({ type: 'ready' });
 </script>
 </body>
 </html>`;

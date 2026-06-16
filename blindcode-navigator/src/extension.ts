@@ -98,6 +98,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.workspace.onDidChangeConfiguration(event => {
             if (event.affectsConfiguration('blindcode.sonification')) {
                 sonification.setEnabled(sonificationEnabledFromConfig());
+                sonification.refreshConfig();
             }
         }),
         vscode.commands.registerCommand('blindcode-navigator.toggleSonification', () => {
