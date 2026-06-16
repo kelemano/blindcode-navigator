@@ -1,5 +1,20 @@
 import * as vscode from 'vscode';
-import { toneForDepth } from './sonification';
+import type { OutlineNode } from './navigator';
+import {
+    toneForDepth,
+    sonificationDepth,
+    SonificationDepthConfig,
+    SonificationDepthMode,
+} from './sonification';
+
+/** Liest die Tiefen-Konfiguration der Sonifikation aus den Einstellungen. */
+function depthConfigFromSettings(): SonificationDepthConfig {
+    const config = vscode.workspace.getConfiguration('blindcode.sonification');
+    return {
+        depthMode: config.get<SonificationDepthMode>('depthMode', 'control'),
+        customDepthNodeTypes: config.get<string[]>('customDepthNodeTypes', []),
+    };
+}
 
 /**
  * VS-Code-Adapter für die Sonifikation (Kap. 5.3). Hält ein Webview, in dem die
@@ -34,11 +49,16 @@ export class SonificationController implements vscode.Disposable {
         return this.enabled;
     }
 
-    /** Spielt den Ton für die gegebene Tiefe (no-op, wenn deaktiviert). */
-    play(depth: number): void {
+    /**
+     * Spielt den Ton für einen Knoten (no-op, wenn deaktiviert). Die Tonhöhen-Tiefe
+     * ist eine konfigurierbare Projektion aus dem Outline-Knoten (depthMode /
+     * customDepthNodeTypes) — siehe sonificationDepth.
+     */
+    play(node: OutlineNode): void {
         if (!this.enabled) {
             return;
         }
+        const depth = sonificationDepth(node, depthConfigFromSettings());
         this.ensurePanel().postMessage({ type: 'tone', ...toneForDepth(depth) });
     }
 

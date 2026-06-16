@@ -14,6 +14,24 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "blindcodeTreeContainer",
+          "title": "BlindCode Baum",
+          "icon": "$(list-tree)"
+        }
+      ]
+    },
+    "views": {
+      "blindcodeTreeContainer": [
+        {
+          "id": "blindcodeTree",
+          "name": "Baum",
+          "type": "webview"
+        }
+      ]
+    },
     "configuration": {
       "title": "BlindCode Navigator",
       "properties": {
@@ -31,6 +49,23 @@
           "type": "boolean",
           "default": true,
           "description": "Sonifikation: Verschachtelungstiefe als Tonhöhe bei der Navigation (FF2). In Studienbedingung B aus, in C an."
+        },
+        "blindcode.sonification.depthMode": {
+          "type": "string",
+          "enum": ["control", "control-and-methods", "full-scope"],
+          "enumDescriptions": [
+            "Nur Kontroll-Verschachtelung: zählt jeden Knoten als Ebene, OHNE Klasse/Methode und OHNE then/else-Zweige (Standard; MathLogic: if=1, for=2, inneres if=3, println=4).",
+            "Wie control, aber die Methode zählt mit (alles +1; println=5).",
+            "Klasse und Methode zählen mit (println=6)."
+          ],
+          "default": "control",
+          "description": "Welche Tiefe die Sonifikation auf die Tonhöhe abbildet (reine Projektion aus dem Outline-Baum; ändert NICHT Baumansicht oder Sprachausgabe)."
+        },
+        "blindcode.sonification.customDepthNodeTypes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Optional (Profi): Wenn nicht leer, überschreibt depthMode — nur diese tree-sitter-Knotentypen erhöhen die Tiefe, z. B. [\"if_statement\",\"for_statement\",\"while_statement\",\"method_declaration\"]."
         }
       }
     },

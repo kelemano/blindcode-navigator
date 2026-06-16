@@ -10,7 +10,7 @@ import {
     NavServices,
 } from './editorNavigation';
 import { SpeechController } from './speech';
-import { TreePanel } from './treePanel';
+import { TreeViewProvider } from './treePanel';
 import { SonificationController } from './sonificationPlayer';
 
 function sonificationEnabledFromConfig(): boolean {
@@ -25,18 +25,24 @@ export function activate(context: vscode.ExtensionContext) {
     const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     statusBar.show();
     const speech = new SpeechController(statusBar);
-    // Visuelle Baumansicht (Debug/Tutor-Hilfe). Klick auf einen Knoten → Cursor dorthin.
-    const treePanel = new TreePanel((row, column) => {
+    // Visuelle Baumansicht (Debug/Tutor-Hilfe) im UNTEREN Panel-Bereich (neben Terminal/Output).
+    // Klick auf einen Knoten → Cursor dorthin.
+    const treeProvider = new TreeViewProvider((row, column) => {
         const editor = vscode.window.activeTextEditor;
         if (!editor) { return; }
         const pos = new vscode.Position(row, column);
         editor.selection = new vscode.Selection(pos, pos);
         editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
     });
+    const treeRegistration = vscode.window.registerWebviewViewProvider(
+        TreeViewProvider.viewId,
+        treeProvider,
+        { webviewOptions: { retainContextWhenHidden: true } }
+    );
     // Sonifikation (Tiefe → Tonhöhe) via Web-Audio-Webview. An-/abschaltbar (M5: A/B/C).
     const sonification = new SonificationController(sonificationEnabledFromConfig());
     const services: NavServices = { speech, sonification };
-    context.subscriptions.push(outputChannel, statusBar, speech, treePanel, sonification);
+    context.subscriptions.push(outputChannel, statusBar, speech, treeRegistration, sonification);
 
     function updateNodeInfo(editor: vscode.TextEditor): void {
         if (editor.document.languageId !== 'java') {
@@ -44,8 +50,8 @@ export function activate(context: vscode.ExtensionContext) {
             return;
         }
         const { outline, current } = outlineAndCurrent(editor);
-        // Baumansicht live aktualisieren (nur wenn offen).
-        treePanel.update(outline, current);
+        // Baumansicht live aktualisieren (nur wenn die View geladen ist).
+        treeProvider.update(outline, current);
         if (!current) { return; }
         // Statusleiste für die Versuchsleiterin; gesprochen wird nur bei Navigation.
         speech.showStatus(current);
@@ -122,11 +128,12 @@ export function activate(context: vscode.ExtensionContext) {
             withJavaEditor(showOutline)
         ),
         vscode.commands.registerCommand('blindcode-navigator.showTree', () => {
-            treePanel.reveal();
+            // Öffnet/fokussiert die View im unteren Panel-Bereich.
+            void vscode.commands.executeCommand(`${TreeViewProvider.viewId}.focus`);
             const editor = vscode.window.activeTextEditor;
             if (editor && editor.document.languageId === 'java') {
                 const { outline, current } = outlineAndCurrent(editor);
-                treePanel.update(outline, current);
+                treeProvider.update(outline, current);
             }
         }),
         vscode.commands.registerCommand('blindcode-navigator.helloWorld', () => {

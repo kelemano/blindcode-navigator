@@ -67,10 +67,10 @@ function moveToNode(editor: vscode.TextEditor, node: OutlineNode): void {
     );
 }
 
-/** Bewegt den Cursor zum Ziel und löst Sprache + Sonifikation aus (onNavigate). */
+/** Löst Sprache + Sonifikation auf dem Zielknoten aus (onNavigate). */
 function announce(services: NavServices, target: OutlineNode): void {
     services.speech.announce(target);
-    services.sonification.play(outlineDepth(target));
+    services.sonification.play(target);
 }
 
 function go(

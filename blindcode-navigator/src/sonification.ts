@@ -1,3 +1,5 @@
+import type { OutlineKind, OutlineNode } from './navigator';
+
 /**
  * Sonifikation — reine Logik (Komponente "Sonification", Kap. 4.4).
  *
@@ -53,6 +55,64 @@ export function depthToFrequency(depth: number): { frequency: number; warning: b
         return { frequency: 880, warning: true };
     }
     return { frequency: PENTATONIC_HZ[level - 1], warning: false };
+}
+
+/**
+ * Tiefen-Modus für die Sonifikation. Die Tiefe ist eine reine PROJEKTION aus dem
+ * EINEN kanonischen Outline-Baum — es wird KEIN zweiter Baum gebaut. Es ändert sich
+ * nur, welche Knoten entlang des Pfades als Ebene zählen.
+ */
+export type SonificationDepthMode = 'control' | 'control-and-methods' | 'full-scope';
+
+export interface SonificationDepthConfig {
+    depthMode: SonificationDepthMode;
+    /** Wenn nicht leer: überschreibt depthMode — nur diese astNode-Typen zählen. */
+    customDepthNodeTypes: string[];
+}
+
+/** Pro Modus die Outline-Arten, die NICHT als Tiefe zählen. */
+const EXCLUDED_KINDS: Record<SonificationDepthMode, ReadonlySet<OutlineKind>> = {
+    // Kontroll-Verschachtelung: Klasse/Methode + then/else-Wrapper zählen nicht.
+    'control': new Set<OutlineKind>([
+        'class', 'interface', 'enum', 'method', 'constructor', 'then-branch', 'else-branch',
+    ]),
+    // wie control, aber Methode/Konstruktor zählen mit.
+    'control-and-methods': new Set<OutlineKind>([
+        'class', 'interface', 'enum', 'then-branch', 'else-branch',
+    ]),
+    // alles außer den then/else-Zweig-Wrappern zählt (Klasse + Methode inklusive).
+    'full-scope': new Set<OutlineKind>([
+        'then-branch', 'else-branch',
+    ]),
+};
+
+/**
+ * Sonifikations-Tiefe eines Outline-Knotens (reine Projektion). Zählt die Knoten
+ * entlang des Pfades Selbst→Wurzel, die laut Konfiguration als Ebene gelten.
+ *
+ * - customDepthNodeTypes nicht leer → nur Knoten, deren astNode.type in der Liste ist.
+ * - sonst nach depthMode (siehe EXCLUDED_KINDS).
+ *
+ * Ändert NICHT die in der Baumansicht angezeigte Tiefe (outlineDepth) oder die
+ * Sprachausgabe — nur die Tonhöhe der Sonifikation.
+ */
+export function sonificationDepth(node: OutlineNode, config: SonificationDepthConfig): number {
+    let depth = 0;
+    let current: OutlineNode | null = node;
+    if (config.customDepthNodeTypes.length > 0) {
+        const allowed = new Set(config.customDepthNodeTypes);
+        while (current) {
+            if (allowed.has(current.astNode.type)) { depth += 1; }
+            current = current.parent;
+        }
+        return depth;
+    }
+    const excluded = EXCLUDED_KINDS[config.depthMode] ?? EXCLUDED_KINDS.control;
+    while (current) {
+        if (!excluded.has(current.kind)) { depth += 1; }
+        current = current.parent;
+    }
+    return depth;
 }
 
 /** Baut den vollständigen Abspielbefehl für eine Tiefe (Frequenz + Hüllkurven-Defaults). */

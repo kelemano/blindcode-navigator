@@ -54,45 +54,39 @@ export function buildTreeData(outline: Outline, current: OutlineNode | null): Tr
     }));
 }
 
-export class TreePanel implements vscode.Disposable {
-    private panel: vscode.WebviewPanel | undefined;
+export class TreeViewProvider implements vscode.WebviewViewProvider {
+    /** ID der View (siehe package.json contributes.views). */
+    public static readonly viewId = 'blindcodeTree';
+
+    private view: vscode.WebviewView | undefined;
+    private lastNodes: TreeItemData[] = [];
 
     /** onJump wird aufgerufen, wenn im Baum auf einen Knoten geklickt wird. */
     constructor(private readonly onJump: (row: number, column: number) => void) {}
 
-    isOpen(): boolean {
-        return this.panel !== undefined;
-    }
-
-    /** Öffnet (oder fokussiert) das Panel. */
-    reveal(): void {
-        if (this.panel) {
-            this.panel.reveal(vscode.ViewColumn.Beside, true);
-            return;
-        }
-        this.panel = vscode.window.createWebviewPanel(
-            'blindcodeTree',
-            'BlindCode Baum',
-            { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        this.panel.webview.html = this.html();
-        this.panel.webview.onDidReceiveMessage(message => {
+    resolveWebviewView(webviewView: vscode.WebviewView): void {
+        this.view = webviewView;
+        webviewView.webview.options = { enableScripts: true };
+        webviewView.webview.html = this.html();
+        webviewView.webview.onDidReceiveMessage(message => {
             if (message?.type === 'jump') {
                 this.onJump(message.row, message.col);
+            } else if (message?.type === 'ready') {
+                // Webview ist geladen → den zuletzt bekannten Stand rendern.
+                this.post();
             }
         });
-        this.panel.onDidDispose(() => { this.panel = undefined; });
+        webviewView.onDidDispose(() => { this.view = undefined; });
     }
 
-    /** Aktualisiert die Darstellung (nur wenn das Panel offen ist). */
+    /** Aktualisiert die Darstellung (nur wenn die View existiert/sichtbar ist). */
     update(outline: Outline, current: OutlineNode | null): void {
-        this.panel?.webview.postMessage({ type: 'render', nodes: buildTreeData(outline, current) });
+        this.lastNodes = buildTreeData(outline, current);
+        this.post();
     }
 
-    dispose(): void {
-        this.panel?.dispose();
-        this.panel = undefined;
+    private post(): void {
+        this.view?.webview.postMessage({ type: 'render', nodes: this.lastNodes });
     }
 
     private html(): string {
@@ -175,6 +169,7 @@ export class TreePanel implements vscode.Disposable {
     }
   }
   window.addEventListener('message', e => { if (e.data && e.data.type === 'render') { render(e.data.nodes); } });
+  vscode.postMessage({ type: 'ready' });
 </script>
 </body>
 </html>`;
