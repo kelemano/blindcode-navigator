@@ -7,9 +7,15 @@ import {
     navigateOut,
     showOutline,
     outlineAndCurrent,
+    NavServices,
 } from './editorNavigation';
 import { SpeechController } from './speech';
 import { TreePanel } from './treePanel';
+import { SonificationController } from './sonificationPlayer';
+
+function sonificationEnabledFromConfig(): boolean {
+    return vscode.workspace.getConfiguration('blindcode').get<boolean>('sonification', true);
+}
 
 const DEBOUNCE_MS = 300;
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -27,7 +33,10 @@ export function activate(context: vscode.ExtensionContext) {
         editor.selection = new vscode.Selection(pos, pos);
         editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
     });
-    context.subscriptions.push(outputChannel, statusBar, speech, treePanel);
+    // Sonifikation (Tiefe → Tonhöhe) via Web-Audio-Webview. An-/abschaltbar (M5: A/B/C).
+    const sonification = new SonificationController(sonificationEnabledFromConfig());
+    const services: NavServices = { speech, sonification };
+    context.subscriptions.push(outputChannel, statusBar, speech, treePanel, sonification);
 
     function updateNodeInfo(editor: vscode.TextEditor): void {
         if (editor.document.languageId !== 'java') {
@@ -61,11 +70,11 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     function withJavaEditor(
-        fn: (editor: vscode.TextEditor, speech: SpeechController) => void
+        fn: (editor: vscode.TextEditor, services: NavServices) => void
     ): () => void {
         return () => {
             const editor = vscode.window.activeTextEditor;
-            if (editor && editor.document.languageId === 'java') { fn(editor, speech); }
+            if (editor && editor.document.languageId === 'java') { fn(editor, services); }
         };
     }
 
@@ -79,6 +88,18 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.workspace.onDidChangeTextDocument(onDocumentChange),
         vscode.workspace.onDidCloseTextDocument(doc => {
             invalidateCache(doc.uri.toString());
+        }),
+        vscode.workspace.onDidChangeConfiguration(event => {
+            if (event.affectsConfiguration('blindcode.sonification')) {
+                sonification.setEnabled(sonificationEnabledFromConfig());
+            }
+        }),
+        vscode.commands.registerCommand('blindcode-navigator.toggleSonification', () => {
+            const on = !sonification.isEnabled();
+            sonification.setEnabled(on);
+            void vscode.workspace.getConfiguration('blindcode')
+                .update('sonification', on, vscode.ConfigurationTarget.Global);
+            vscode.window.showInformationMessage(`Sonifikation ${on ? 'an' : 'aus'}`);
         }),
         vscode.commands.registerCommand(
             'blindcode-navigator.navigateDown',

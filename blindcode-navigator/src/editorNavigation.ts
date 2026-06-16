@@ -13,6 +13,13 @@ import {
 } from './navigator';
 import { describeOutlineNode, outlineMatches } from './contextSpeech';
 import type { SpeechController } from './speech';
+import type { SonificationController } from './sonificationPlayer';
+
+/** Dienste, die bei einer Navigation auf dem Zielknoten ausgelöst werden. */
+export interface NavServices {
+    speech: SpeechController;
+    sonification: SonificationController;
+}
 
 /**
  * VS-Code-Adapter für die Outline-Navigation (Kap. 5.3). Baut pro Aktion den
@@ -60,9 +67,15 @@ function moveToNode(editor: vscode.TextEditor, node: OutlineNode): void {
     );
 }
 
+/** Bewegt den Cursor zum Ziel und löst Sprache + Sonifikation aus (onNavigate). */
+function announce(services: NavServices, target: OutlineNode): void {
+    services.speech.announce(target);
+    services.sonification.play(outlineDepth(target));
+}
+
 function go(
     editor: vscode.TextEditor,
-    speech: SpeechController,
+    services: NavServices,
     pick: (outline: Outline, node: OutlineNode) => OutlineNode | null,
     edgeMessage: string
 ): void {
@@ -77,27 +90,27 @@ function go(
         return;
     }
     moveToNode(editor, target);
-    speech.announce(target);
+    announce(services, target);
 }
 
 /** Alt+↓ — nächster Knoten in Lesereihenfolge. */
-export function navigateDown(editor: vscode.TextEditor, speech: SpeechController): void {
-    go(editor, speech, (outline, node) => navDown(outline, node), 'Ende des Codes erreicht');
+export function navigateDown(editor: vscode.TextEditor, services: NavServices): void {
+    go(editor, services, (outline, node) => navDown(outline, node), 'Ende des Codes erreicht');
 }
 
 /** Alt+↑ — vorheriger Knoten in Lesereihenfolge. */
-export function navigateUp(editor: vscode.TextEditor, speech: SpeechController): void {
-    go(editor, speech, (outline, node) => navUp(outline, node), 'Anfang des Codes erreicht');
+export function navigateUp(editor: vscode.TextEditor, services: NavServices): void {
+    go(editor, services, (outline, node) => navUp(outline, node), 'Anfang des Codes erreicht');
 }
 
 /** Alt+→ — nächstes Geschwister (Block überspringen). */
-export function navigateNextSibling(editor: vscode.TextEditor, speech: SpeechController): void {
-    go(editor, speech, (outline, node) => navNextSibling(outline, node), 'Kein weiterer Knoten auf dieser Ebene');
+export function navigateNextSibling(editor: vscode.TextEditor, services: NavServices): void {
+    go(editor, services, (outline, node) => navNextSibling(outline, node), 'Kein weiterer Knoten auf dieser Ebene');
 }
 
 /** Alt+← — eine Ebene heraus (Elternknoten). */
-export function navigateOut(editor: vscode.TextEditor, speech: SpeechController): void {
-    go(editor, speech, (_outline, node) => navOut(node), 'Oberste Ebene erreicht');
+export function navigateOut(editor: vscode.TextEditor, services: NavServices): void {
+    go(editor, services, (_outline, node) => navOut(node), 'Oberste Ebene erreicht');
 }
 
 interface OutlineQuickPickItem extends vscode.QuickPickItem {
@@ -112,7 +125,7 @@ interface OutlineQuickPickItem extends vscode.QuickPickItem {
  * schaltet die eingebaute (nur Label-)Filterung von VS Code ab, damit unser
  * eigener Filter maßgeblich ist. Enter springt zum Knoten und spricht den Kontext.
  */
-export function showOutline(editor: vscode.TextEditor, speech: SpeechController): void {
+export function showOutline(editor: vscode.TextEditor, services: NavServices): void {
     const tree = getAST(editor.document);
     const outline = buildOutline(tree.rootNode);
     if (outline.linear.length === 0) {
@@ -139,7 +152,7 @@ export function showOutline(editor: vscode.TextEditor, speech: SpeechController)
         const selected = quickPick.selectedItems[0];
         if (selected) {
             moveToNode(editor, selected.node);
-            speech.announce(selected.node);
+            announce(services, selected.node);
         }
         quickPick.hide();
     });

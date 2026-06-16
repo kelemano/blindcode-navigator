@@ -26,6 +26,11 @@
           ],
           "default": "ariaLive",
           "description": "Wie die Kontext-Sprachausgabe an den Screenreader übergeben wird."
+        },
+        "blindcode.sonification": {
+          "type": "boolean",
+          "default": true,
+          "description": "Sonifikation: Verschachtelungstiefe als Tonhöhe bei der Navigation (FF2). In Studienbedingung B aus, in C an."
         }
       }
     },
@@ -57,6 +62,10 @@
       {
         "command": "blindcode-navigator.showTree",
         "title": "BCNav: Baumansicht anzeigen (Visualisierung/Debug)"
+      },
+      {
+        "command": "blindcode-navigator.toggleSonification",
+        "title": "BCNav: Sonifikation an/aus"
       }
     ],
     "keybindings": [
@@ -88,6 +97,11 @@
       {
         "command": "blindcode-navigator.showTree",
         "key": "alt+t",
+        "when": "editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.toggleSonification",
+        "key": "alt+s",
         "when": "editorTextFocus && editorLangId == 'java'"
       }
     ]
