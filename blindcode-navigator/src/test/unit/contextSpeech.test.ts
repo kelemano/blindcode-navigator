@@ -48,10 +48,10 @@ suite('contextSpeech — buildContextString', () => {
         );
     });
 
-    test('for-Schleife nennt Methode und Klasse', () => {
+    test('for-Schleife nennt Zweig, Methode und Klasse', () => {
         assert.strictEqual(
             buildContextString(forNode),
-            'for-Schleife, im if-Block, in Methode calculate, Klasse MathLogic'
+            'for-Schleife, im if-Zweig, in Methode calculate, Klasse MathLogic'
         );
     });
 
@@ -64,9 +64,9 @@ suite('contextSpeech — buildContextString', () => {
     });
 
     suite('describeNode (Selbst-Beschreibung)', () => {
-        test('then-block des if -> "if-Block"', () => {
+        test('then-block des if -> "if-Zweig"', () => {
             const thenBlock = outerIf.childForFieldName('consequence')!;
-            assert.strictEqual(describeNode(thenBlock), 'if-Block');
+            assert.strictEqual(describeNode(thenBlock), 'if-Zweig');
         });
 
         test('alternative-block des if -> "else-Zweig"', () => {

@@ -1,4 +1,5 @@
 import type Parser = require('tree-sitter');
+import { ifBranchKind } from './navigator';
 
 /**
  * Kontext-Sprachausgabe (Komponente "ContextSpeech", Kap. 4.3).
@@ -22,7 +23,7 @@ import type Parser = require('tree-sitter');
 
 /** Knotentyp → deutsche Bezeichnung (Selbst-Beschreibung). */
 const LABELS: Record<string, string> = {
-    if_statement: 'if-Block',
+    if_statement: 'if-Anweisung',
     for_statement: 'for-Schleife',
     enhanced_for_statement: 'for-each-Schleife',
     while_statement: 'while-Schleife',
@@ -72,27 +73,8 @@ function nodeName(node: Parser.SyntaxNode): string | null {
     return node.childForFieldName('name')?.text ?? null;
 }
 
-/**
- * Zweig-Art eines block-Knotens: 'else' wenn er der `alternative`-Zweig eines
- * if ist, 'then' wenn `consequence`, sonst null.
- *
- * Hintergrund (known-issues.md): tree-sitter-java kennt KEINEN else_clause-Knoten;
- * der else-Zweig ist der zweite block des if (Feld `alternative`). Erkennung daher
- * über Feldname + stabile node.id.
- */
-function ifBranchKind(block: Parser.SyntaxNode): 'else' | 'then' | null {
-    const parent = block.parent;
-    if (!parent || parent.type !== 'if_statement') {
-        return null;
-    }
-    if (parent.childForFieldName('alternative')?.id === block.id) {
-        return 'else';
-    }
-    if (parent.childForFieldName('consequence')?.id === block.id) {
-        return 'then';
-    }
-    return null;
-}
+// ifBranchKind (else/then-Erkennung) lebt in navigator.ts (eine Quelle der Wahrheit
+// für die AST-Struktur) und wird hier für die Beschriftung wiederverwendet.
 
 /** Ist `node` eine anonyme innere Klasse (object_creation mit class_body)? */
 function isAnonymousClass(node: Parser.SyntaxNode): boolean {
@@ -110,7 +92,7 @@ export function describeNode(node: Parser.SyntaxNode): string {
     if (node.type === 'block') {
         const branch = ifBranchKind(node);
         if (branch === 'else') { return 'else-Zweig'; }
-        if (branch === 'then') { return 'if-Block'; }
+        if (branch === 'then') { return 'if-Zweig'; }
         return 'Block';
     }
     if (isAnonymousClass(node)) {
@@ -135,7 +117,7 @@ function scopeQualifier(node: Parser.SyntaxNode): string | null {
         case 'block': {
             const branch = ifBranchKind(node);
             if (branch === 'else') { return 'im else-Zweig'; }
-            if (branch === 'then') { return 'im if-Block'; }
+            if (branch === 'then') { return 'im if-Zweig'; }
             return null;
         }
         case 'for_statement':
