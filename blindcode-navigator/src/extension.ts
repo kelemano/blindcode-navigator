@@ -6,9 +6,10 @@ import {
     navigateNextSibling,
     navigateOut,
     showOutline,
-    outlineNodeAtCursor,
+    outlineAndCurrent,
 } from './editorNavigation';
 import { SpeechController } from './speech';
+import { TreePanel } from './treePanel';
 
 const DEBOUNCE_MS = 300;
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -18,19 +19,29 @@ export function activate(context: vscode.ExtensionContext) {
     const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     statusBar.show();
     const speech = new SpeechController(statusBar);
-    context.subscriptions.push(outputChannel, statusBar, speech);
+    // Visuelle Baumansicht (Debug/Tutor-Hilfe). Klick auf einen Knoten → Cursor dorthin.
+    const treePanel = new TreePanel((row, column) => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) { return; }
+        const pos = new vscode.Position(row, column);
+        editor.selection = new vscode.Selection(pos, pos);
+        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    });
+    context.subscriptions.push(outputChannel, statusBar, speech, treePanel);
 
     function updateNodeInfo(editor: vscode.TextEditor): void {
         if (editor.document.languageId !== 'java') {
             statusBar.text = '';
             return;
         }
-        const node = outlineNodeAtCursor(editor);
-        if (!node) { return; }
+        const { outline, current } = outlineAndCurrent(editor);
+        // Baumansicht live aktualisieren (nur wenn offen).
+        treePanel.update(outline, current);
+        if (!current) { return; }
         // Statusleiste für die Versuchsleiterin; gesprochen wird nur bei Navigation.
-        speech.showStatus(node);
-        const pos = node.astNode.startPosition;
-        outputChannel.appendLine(`${pos.row + 1}:${pos.column + 1}  ${node.kind} (${node.astNode.type})`);
+        speech.showStatus(current);
+        const pos = current.astNode.startPosition;
+        outputChannel.appendLine(`${pos.row + 1}:${pos.column + 1}  ${current.kind} (${current.astNode.type})`);
     }
 
     function onDocumentChange(event: vscode.TextDocumentChangeEvent): void {
@@ -89,6 +100,14 @@ export function activate(context: vscode.ExtensionContext) {
             'blindcode-navigator.showOutline',
             withJavaEditor(showOutline)
         ),
+        vscode.commands.registerCommand('blindcode-navigator.showTree', () => {
+            treePanel.reveal();
+            const editor = vscode.window.activeTextEditor;
+            if (editor && editor.document.languageId === 'java') {
+                const { outline, current } = outlineAndCurrent(editor);
+                treePanel.update(outline, current);
+            }
+        }),
         vscode.commands.registerCommand('blindcode-navigator.helloWorld', () => {
             outputChannel.show();
             vscode.window.showInformationMessage('BlindCode Navigator active — open the Output panel for AST info.');

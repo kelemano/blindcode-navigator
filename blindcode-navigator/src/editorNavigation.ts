@@ -27,10 +27,18 @@ import type { SpeechController } from './speech';
 
 /** Outline-Knoten an der aktuellen Cursorposition (oder null). */
 export function outlineNodeAtCursor(editor: vscode.TextEditor): OutlineNode | null {
+    return outlineAndCurrent(editor).current;
+}
+
+/**
+ * Outline-Baum plus den Knoten an der Cursorposition (current = null, wenn der
+ * Cursor auf keinem Stopp liegt). Eine Quelle für Statusleiste, Sprache und Baumansicht.
+ */
+export function outlineAndCurrent(editor: vscode.TextEditor): { outline: Outline; current: OutlineNode | null } {
     const tree = getAST(editor.document);
     const outline = buildOutline(tree.rootNode);
     const astNode = getNamedNodeAtCursor(tree, editor.selection.active);
-    return outlineNodeFor(outline, astNode);
+    return { outline, current: outlineNodeFor(outline, astNode) };
 }
 
 function locate(editor: vscode.TextEditor): { outline: Outline; node: OutlineNode } | null {

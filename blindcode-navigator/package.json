@@ -53,6 +53,10 @@
       {
         "command": "blindcode-navigator.showOutline",
         "title": "BCNav: Gliederung anzeigen / zu Knoten springen"
+      },
+      {
+        "command": "blindcode-navigator.showTree",
+        "title": "BCNav: Baumansicht anzeigen (Visualisierung/Debug)"
       }
     ],
     "keybindings": [
@@ -79,6 +83,11 @@
       {
         "command": "blindcode-navigator.showOutline",
         "key": "alt+o",
+        "when": "editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.showTree",
+        "key": "alt+t",
         "when": "editorTextFocus && editorLangId == 'java'"
       }
     ]

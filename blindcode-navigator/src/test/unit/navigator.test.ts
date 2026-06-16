@@ -8,6 +8,7 @@ import {
     navIn,
     navOut,
     navNextSibling,
+    resolveNeighbours,
     Outline,
     OutlineNode,
 } from '../../navigator';
@@ -155,6 +156,31 @@ suite('navigator — Outline-Modell (StructJumper-Gliederung)', () => {
         });
         test('Edge: einzige Top-Level-Klasse hat kein Geschwister', () => {
             assert.strictEqual(navNextSibling(outline, first('class')), null);
+        });
+    });
+
+    suite('resolveNeighbours (Richtungsziele für die Baumansicht)', () => {
+        test('für das äußere if: up/down/sibling/parent korrekt', () => {
+            const n = resolveNeighbours(outline, at('if', 3));
+            assert.strictEqual(n.up?.kind, 'method');        // Alt+↑ vorheriger in Lesereihenfolge
+            assert.strictEqual(n.down?.kind, 'then-branch');  // Alt+↓ nächster in Lesereihenfolge
+            assert.strictEqual(n.sibling?.kind, 'return');    // Alt+→ nächstes Geschwister (return x)
+            assert.strictEqual(n.parent?.kind, 'method');     // Alt+← Elternknoten
+        });
+
+        test('für println: kein Geschwister; down zeigt in den else-Zweig', () => {
+            const n = resolveNeighbours(outline, first('statement'));
+            assert.strictEqual(n.down?.kind, 'else-branch');
+            assert.strictEqual(n.sibling, null);
+            assert.strictEqual(n.parent?.kind, 'then-branch');
+        });
+
+        test('für die Wurzel (class): kein up, kein sibling, kein parent', () => {
+            const n = resolveNeighbours(outline, first('class'));
+            assert.strictEqual(n.up, null);
+            assert.strictEqual(n.sibling, null);
+            assert.strictEqual(n.parent, null);
+            assert.strictEqual(n.down?.kind, 'method');
         });
     });
 

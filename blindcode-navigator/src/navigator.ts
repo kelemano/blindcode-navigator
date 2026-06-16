@@ -242,6 +242,31 @@ export function navNextSibling(outline: Outline, node: OutlineNode): OutlineNode
     return siblings[index + 1] ?? null;
 }
 
+/**
+ * Die vier Richtungs-Nachbarn eines Knotens (für die visuelle Baumansicht).
+ * Bündelt genau die Funktionen, die auch die Tasten ausführen.
+ */
+export interface Neighbours {
+    /** Alt+↑ — vorheriger Knoten in Lesereihenfolge. */
+    up: OutlineNode | null;
+    /** Alt+↓ — nächster Knoten in Lesereihenfolge. */
+    down: OutlineNode | null;
+    /** Alt+→ — nächstes Geschwister. */
+    sibling: OutlineNode | null;
+    /** Alt+← — Elternknoten. */
+    parent: OutlineNode | null;
+}
+
+/** Löst für einen Knoten alle vier Richtungsziele auf (wiederverwendet die nav-Funktionen). */
+export function resolveNeighbours(outline: Outline, node: OutlineNode): Neighbours {
+    return {
+        up: navUp(outline, node),
+        down: navDown(outline, node),
+        sibling: navNextSibling(outline, node),
+        parent: navOut(node),
+    };
+}
+
 /** Verschachtelungstiefe (Wurzel = 0) — für die Einrückung in der Gliederungs-Liste. */
 export function outlineDepth(node: OutlineNode): number {
     let depth = 0;
