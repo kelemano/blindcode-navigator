@@ -57,8 +57,11 @@ const CMD = {
 suite('Integration: BlindCode Navigator am Golden-File', () => {
 
     suiteSetup(async () => {
+        // Java-Datei öffnen → aktiviert die Extension (activationEvents: onLanguage:java),
+        // damit die Befehle registriert sind, bevor der erste Test sie prüft.
+        await openGolden();
         await setCondition('C'); // alle Funktionen an
-        await delay(50);
+        await delay(150);
     });
 
     suiteTeardown(async () => {
