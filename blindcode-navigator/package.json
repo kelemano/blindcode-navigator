@@ -1,8 +1,14 @@
 {
   "name": "blindcode-navigator",
-  "displayName": "blindcode-navigator",
-  "description": "AST-based audio navigation and sonification for blind Java programming beginners.",
-  "version": "0.0.1",
+  "displayName": "BlindCode Navigator",
+  "description": "Strukturorientierte Audio-Navigation und Sonifikation für blinde Java-Anfänger:innen.",
+  "version": "0.1.0",
+  "publisher": "blindcode",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kelemano/blindcode-navigator"
+  },
   "engines": {
     "vscode": "^1.118.0"
   },
@@ -165,7 +171,8 @@
     "test:unit": "mocha \"out/test/unit/**/*.test.js\"",
     "pretest:integration": "npm run compile && npm run lint",
     "test:integration": "vscode-test",
-    "test": "npm run test:unit && npm run test:integration"
+    "test": "npm run test:unit && npm run test:integration",
+    "package": "vsce package"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -173,6 +180,7 @@
     "@types/vscode": "^1.118.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.2.1",
     "eslint": "^9.39.3",
     "mocha": "^11.0.1",
     "typescript": "^5.9.3",
