@@ -195,6 +195,19 @@ export function activate(context: vscode.ExtensionContext) {
                 treeProvider.update(outline, current);
             }
         }),
+        vscode.commands.registerCommand('blindcode-navigator.whereAmI', () => {
+            // „Wo bin ich?" — spricht den aktuellen Pfad erneut, ohne zu navigieren.
+            // Sprach-Feature → in Bedingung A aus.
+            if (!conditionManager.isEnabled('speech')) { return; }
+            const editor = vscode.window.activeTextEditor;
+            if (!editor || editor.document.languageId !== 'java') { return; }
+            const { current } = outlineAndCurrent(editor);
+            if (current) {
+                speech.announce(current);
+            } else {
+                vscode.window.showInformationMessage('Keine Code-Struktur an dieser Position');
+            }
+        }),
         vscode.commands.registerCommand('blindcode-navigator.helloWorld', () => {
             outputChannel.show();
             vscode.window.showInformationMessage('BlindCode Navigator active — open the Output panel for AST info.');

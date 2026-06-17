@@ -1,6 +1,13 @@
 import * as vscode from 'vscode';
 import type { OutlineNode } from './navigator';
-import { buildContextString, describeOutlineNode } from './contextSpeech';
+import { buildContextString, describeOutlineNode, SpeechVerbosity } from './contextSpeech';
+
+function verbosityFromConfig(): SpeechVerbosity {
+    const value = vscode.workspace
+        .getConfiguration('blindcode.speech')
+        .get<string>('verbosity', 'high');
+    return value === 'low' || value === 'medium' || value === 'high' ? value : 'high';
+}
 
 /**
  * Sprachausgabe-Schicht (VS-Code-Adapter für ContextSpeech, Kap. 4.3/5.3).
@@ -116,7 +123,7 @@ export class SpeechController implements vscode.Disposable {
 
     /** Spricht den vollständigen Kontext und aktualisiert die Statusleiste. */
     announce(node: OutlineNode): void {
-        const text = buildContextString(node);
+        const text = buildContextString(node, verbosityFromConfig());
         this.statusBar.text = `BCNav: ${describeOutlineNode(node)}`;
         this.announcer.announce(text);
     }

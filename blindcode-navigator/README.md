@@ -23,6 +23,7 @@ bin ich", und per Ton die Verschachtelungstiefe wahrnehmen.
 | Alt+→ | nächstes Geschwister (Block überspringen) |
 | Alt+← | eine Ebene heraus |
 | Alt+O | Gliederungs-Liste (zu Knoten springen) |
+| Alt+W | „Wo bin ich?" — aktuellen Pfad erneut vorlesen |
 | Alt+S | Sonifikation an/aus |
 | Alt+T | Baumansicht (Visualisierung/Debug) |
 
@@ -33,6 +34,7 @@ bin ich", und per Ton die Verschachtelungstiefe wahrnehmen.
 | `blindcode.sonification` | Sonifikation an/aus |
 | `blindcode.sonification.depthMode` | Tiefenberechnung für die Tonhöhe (`control` / `control-and-methods` / `full-scope`) |
 | `blindcode.sonification.customDepthNodeTypes` | (Profi) eigene Knotentypen für die Tiefe |
+| `blindcode.speech.verbosity` | Ausführlichkeit der Ansage: `high` (volle Kette, Standard) / `medium` (nur Methode+Klasse) / `low` (nur der Knoten) |
 | `blindcode.speechMechanism` | `ariaLive` (Standard) oder `notification` (garantiert vorgelesen) |
 
 ## Installation (VSIX)

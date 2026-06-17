@@ -98,6 +98,35 @@ suite('contextSpeech — Ansage auf dem Outline-Baum', () => {
         });
     });
 
+    suite('buildContextString — Ausführlichkeit (verbosity)', () => {
+        test('high (Standard) = volle Skopus-Kette', () => {
+            const node = at('return', 10);
+            assert.strictEqual(
+                buildContextString(node, 'high'),
+                'return-Anweisung, im Sonst-Zweig, in Methode calculate, Klasse MathLogic'
+            );
+            // Standard (ohne Argument) entspricht high → bestehende Erwartungen bleiben.
+            assert.strictEqual(buildContextString(node), buildContextString(node, 'high'));
+        });
+
+        test('medium = nur Anker-Skopusse (Methode/Klasse), ohne Zwischenstrukturen', () => {
+            assert.strictEqual(
+                buildContextString(at('return', 10), 'medium'),
+                'return-Anweisung, in Methode calculate, Klasse MathLogic'
+            );
+            // tief verschachtelte println: medium lässt if/for/Zweige weg
+            assert.strictEqual(
+                buildContextString(at('statement', 6), 'medium'),
+                'Anweisung, in Methode calculate, Klasse MathLogic'
+            );
+        });
+
+        test('low = nur die Selbst-Beschreibung', () => {
+            assert.strictEqual(buildContextString(at('return', 10), 'low'), 'return-Anweisung');
+            assert.strictEqual(buildContextString(at('statement', 6), 'low'), 'Anweisung');
+        });
+    });
+
     suite('describeOutlineNode (Selbst-Beschreibung)', () => {
         test('then-/else-Zweig heißen Dann-Zweig / Sonst-Zweig', () => {
             assert.strictEqual(describeOutlineNode(at('then-branch', 3)), 'Dann-Zweig');

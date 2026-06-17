@@ -76,6 +76,7 @@ suite('Integration: BlindCode Navigator am Golden-File', () => {
             'blindcode-navigator.showTree',
             'blindcode-navigator.toggleSonification',
             'blindcode-navigator.setStudyCondition',
+            'blindcode-navigator.whereAmI',
         ]) {
             assert.ok(commands.includes(command), `Befehl fehlt: ${command}`);
         }
@@ -138,5 +139,12 @@ suite('Integration: BlindCode Navigator am Golden-File', () => {
         setCursor(editor, 0, 13);
         await vscode.commands.executeCommand(CMD.down);
         assert.strictEqual(activeLine(editor), 1);
+    });
+
+    test('"Wo bin ich?" (Alt+W) bewegt den Cursor NICHT (nur Sprache)', async () => {
+        const editor = await openGolden();
+        setCursor(editor, 5, 10); // println
+        await vscode.commands.executeCommand('blindcode-navigator.whereAmI');
+        assert.strictEqual(activeLine(editor), 5); // unverändert
     });
 });

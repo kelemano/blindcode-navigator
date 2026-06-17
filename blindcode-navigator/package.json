@@ -52,6 +52,17 @@
           "default": "C",
           "description": "Studienbedingung (A/B/C). Schaltet die Funktionen je Bedingung für die Vergleichsstudie."
         },
+        "blindcode.speech.verbosity": {
+          "type": "string",
+          "enum": ["high", "medium", "low"],
+          "enumDescriptions": [
+            "Volle Skopus-Kette (Standard): z. B. „return-Anweisung, im Sonst-Zweig, in Methode calculate, Klasse MathLogic\".",
+            "Nur Anker-Skopusse (Methode/Klasse), ohne Zwischenstrukturen: „return-Anweisung, in Methode calculate, Klasse MathLogic\". Kürzer bei tiefer Verschachtelung.",
+            "Nur der Knoten selbst: „return-Anweisung\"."
+          ],
+          "default": "high",
+          "description": "Wie ausführlich die Kontext-Sprachausgabe den Pfad nennt."
+        },
         "blindcode.speechMechanism": {
           "type": "string",
           "enum": ["ariaLive", "notification"],
@@ -122,6 +133,10 @@
       {
         "command": "blindcode-navigator.setStudyCondition",
         "title": "BCNav: Studienbedingung wählen (A/B/C)"
+      },
+      {
+        "command": "blindcode-navigator.whereAmI",
+        "title": "BCNav: Wo bin ich? (aktuellen Pfad vorlesen)"
       }
     ],
     "keybindings": [
@@ -158,6 +173,11 @@
       {
         "command": "blindcode-navigator.toggleSonification",
         "key": "alt+s",
+        "when": "editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.whereAmI",
+        "key": "alt+w",
         "when": "editorTextFocus && editorLangId == 'java'"
       }
     ]

@@ -157,8 +157,25 @@ function scopeQualifier(node: OutlineNode): string | null {
     }
 }
 
-/** Skopus-Kette über die Outline-Eltern (innen → außen). */
-function scopeQualifiers(node: OutlineNode): string[] {
+/**
+ * Ausführlichkeit der Sprachausgabe:
+ *  - high   = volle Skopus-Kette (Standard, Studienverhalten)
+ *  - medium = nur die „Anker"-Skopusse (Methode/Konstruktor/Klasse/…), ohne
+ *             Zwischen-Kontrollstrukturen → kürzer bei tiefer Verschachtelung
+ *  - low    = nur die Selbst-Beschreibung
+ */
+export type SpeechVerbosity = 'high' | 'medium' | 'low';
+
+/** „Anker"-Skopusse, die in medium erhalten bleiben (das namentliche „wo"). */
+const ANCHOR_KINDS = new Set<OutlineKind>([
+    'method', 'constructor', 'class', 'interface', 'enum',
+]);
+
+/** Skopus-Kette über die Outline-Eltern (innen → außen), gefiltert nach Ausführlichkeit. */
+function scopeQualifiers(node: OutlineNode, verbosity: SpeechVerbosity): string[] {
+    if (verbosity === 'low') {
+        return [];
+    }
     const out: string[] = [];
     let child = node;
     let current = node.parent;
@@ -170,7 +187,9 @@ function scopeQualifiers(node: OutlineNode): string[] {
             current.kind === 'if' &&
             child !== node && // nur wenn der Zweig als Qualifizierer auftritt, nicht als Selbst
             (child.kind === 'then-branch' || child.kind === 'else-branch');
-        if (!isIfBehindBranch) {
+        // medium: nur Anker-Skopusse (Methode/Klasse/…), keine Zwischenstrukturen.
+        const includeByVerbosity = verbosity === 'high' || ANCHOR_KINDS.has(current.kind);
+        if (!isIfBehindBranch && includeByVerbosity) {
             const qualifier = scopeQualifier(current);
             if (qualifier) {
                 out.push(qualifier);
@@ -182,9 +201,12 @@ function scopeQualifiers(node: OutlineNode): string[] {
     return out;
 }
 
-/** Vollständige Orientierungsbeschreibung: Selbst + Skopus-Kette, durch ", " verbunden. */
-export function buildContextString(node: OutlineNode): string {
-    return [describeOutlineNode(node), ...scopeQualifiers(node)].join(', ');
+/**
+ * Vollständige Orientierungsbeschreibung: Selbst + Skopus-Kette, durch ", " verbunden.
+ * `verbosity` steuert, wie viel Skopus genannt wird (Standard high = volle Kette).
+ */
+export function buildContextString(node: OutlineNode, verbosity: SpeechVerbosity = 'high'): string {
+    return [describeOutlineNode(node), ...scopeQualifiers(node, verbosity)].join(', ');
 }
 
 /**
