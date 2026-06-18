@@ -42,6 +42,19 @@ const KIND_LABELS: Record<OutlineKind, string> = {
     variable: 'Variablendeklaration',
     statement: 'Anweisung',
     lambda: 'Lambda-Ausdruck',
+    error: 'Syntaxfehler',
+    missing: 'fehlender Code',
+};
+
+/** MISSING-Token → konkrete deutsche Beschreibung (z. B. „fehlendes Semikolon"). */
+const MISSING_LABELS: Record<string, string> = {
+    ';': 'fehlendes Semikolon',
+    '}': 'fehlende schließende geschweifte Klammer',
+    '{': 'fehlende öffnende geschweifte Klammer',
+    ')': 'fehlende schließende Klammer',
+    '(': 'fehlende öffnende Klammer',
+    ']': 'fehlende schließende eckige Klammer',
+    '[': 'fehlende öffnende eckige Klammer',
 };
 
 /**
@@ -80,6 +93,8 @@ const KIND_KEYWORDS: Record<OutlineKind, string> = {
     variable: 'variable var',
     statement: 'statement call aufruf',
     lambda: 'lambda',
+    error: 'error fehler syntax syntaxfehler',
+    missing: 'missing fehlt fehlend fehler semikolon klammer',
 };
 
 /** Outline-Arten mit Namen (über das 'name'-Feld). */
@@ -93,6 +108,10 @@ function nameOf(node: OutlineNode): string | null {
 
 /** Selbst-Beschreibung eines Outline-Knotens, z. B. "Sonst-Zweig", "Methode calculate". */
 export function describeOutlineNode(node: OutlineNode): string {
+    // Fehlender Token konkret benennen (z. B. „fehlendes Semikolon").
+    if (node.kind === 'missing') {
+        return MISSING_LABELS[node.astNode.type] ?? `fehlender Token „${node.astNode.type}"`;
+    }
     const label = KIND_LABELS[node.kind];
     if (NAMED_KINDS.has(node.kind)) {
         const name = nameOf(node);

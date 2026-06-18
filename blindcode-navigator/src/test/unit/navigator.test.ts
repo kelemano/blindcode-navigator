@@ -214,4 +214,34 @@ suite('navigator — Outline-Modell (StructJumper-Gliederung)', () => {
             assert.strictEqual(outlineNodeFor(outline, ret.astNode)?.index, ret.index);
         });
     });
+
+    suite('Fehlertoleranz: kaputter Code (ERROR/MISSING)', () => {
+        test('fehlendes Semikolon erscheint als navigierbarer "missing"-Knoten', () => {
+            const o = buildOutline(parseJava('class A {\n void m(){\n  int x = 5\n }\n}').rootNode);
+            const missing = o.linear.find(n => n.kind === 'missing');
+            assert.ok(missing, 'ein missing-Knoten wird erwartet');
+            assert.strictEqual(missing!.astNode.type, ';');
+        });
+
+        test('unparsbarer Code erscheint als navigierbarer "error"-Knoten', () => {
+            const o = buildOutline(parseJava('class A {\n void m(){\n  @@@\n  int y = 1;\n }\n}').rootNode);
+            assert.ok(o.linear.some(n => n.kind === 'error'), 'ein error-Knoten wird erwartet');
+        });
+
+        test('Navigation bleibt stabil: Down/Up sind auch im kaputten Baum echte Inverse', () => {
+            const o = buildOutline(parseJava('class A {\n void m(){\n  int x = 5\n }\n}').rootNode);
+            for (const n of o.linear) {
+                const down = navDown(o, n);
+                if (down) {
+                    assert.strictEqual(navUp(o, down)?.index, n.index);
+                }
+            }
+        });
+
+        test('gültiger Code erzeugt KEINE error/missing-Knoten (keine Regression)', () => {
+            const kinds = new Set(outline.linear.map(n => n.kind));
+            assert.ok(!kinds.has('error'));
+            assert.ok(!kinds.has('missing'));
+        });
+    });
 });

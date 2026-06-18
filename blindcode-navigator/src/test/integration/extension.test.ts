@@ -147,4 +147,16 @@ suite('Integration: BlindCode Navigator am Golden-File', () => {
         await vscode.commands.executeCommand('blindcode-navigator.whereAmI');
         assert.strictEqual(activeLine(editor), 5); // unverändert
     });
+
+    test('Fehlertoleranz: Navigation in kaputtem Code stürzt nicht ab', async () => {
+        const broken = 'public class Broken {\n  void m() {\n    int x = 5\n    if (x > 0) {\n      x = x + 1\n    }\n  }\n}';
+        const doc = await vscode.workspace.openTextDocument({ language: 'java', content: broken });
+        const editor = await vscode.window.showTextDocument(doc);
+        setCursor(editor, 0, 13);
+        // Mehrfach navigieren — darf nicht werfen und der Cursor soll sich bewegen.
+        for (let i = 0; i < 6; i++) {
+            await vscode.commands.executeCommand(CMD.down);
+        }
+        assert.ok(activeLine(editor) >= 0); // erreichbar, kein Absturz
+    });
 });

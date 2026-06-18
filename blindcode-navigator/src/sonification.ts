@@ -38,11 +38,31 @@ export interface ToneCommand {
     frequency: number;
     /** true ab Tiefe > 6 → zusätzlicher Warnton. */
     warning: boolean;
+    /** true → eigener, dissonanter Fehler-Earcon (Syntaxfehler/fehlender Token). */
+    error: boolean;
     durationMs: number;
     volume: number;
     attackMs: number;
     decayMs: number;
     releaseMs: number;
+}
+
+/**
+ * Fehler-Earcon: ein tiefer, dissonanter „Thud" für ERROR-/MISSING-Knoten
+ * (kaputter Code). Klar unterscheidbar von den pentatonischen Tiefen-Tönen.
+ */
+export function errorTone(): ToneCommand {
+    return {
+        depth: 0,
+        frequency: 110, // tief (A2)
+        warning: false,
+        error: true,
+        durationMs: 260,
+        volume: 0.3,
+        attackMs: 5,
+        decayMs: 60,
+        releaseMs: 140,
+    };
 }
 
 /**
@@ -122,6 +142,7 @@ export function toneForDepth(depth: number): ToneCommand {
         depth,
         frequency,
         warning,
+        error: false,
         durationMs: TONE_DEFAULTS.durationMs,
         volume: TONE_DEFAULTS.volume,
         attackMs: TONE_DEFAULTS.attackMs,

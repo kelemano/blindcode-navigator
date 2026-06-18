@@ -27,7 +27,9 @@ export type OutlineKind =
     | 'for' | 'foreach' | 'while' | 'do'
     | 'switch' | 'try' | 'catch' | 'finally' | 'sync' | 'labeled'
     | 'return' | 'break' | 'continue' | 'throw' | 'yield' | 'assert'
-    | 'variable' | 'statement' | 'lambda';
+    | 'variable' | 'statement' | 'lambda'
+    // Fehlertoleranz: tree-sitter-Knoten für kaputten Code (FF/Robustheit).
+    | 'error' | 'missing';
 
 export interface OutlineNode {
     /** AST-Knoten, auf den der Cursor gesetzt wird. */
@@ -82,6 +84,14 @@ const STOP_KINDS: Record<string, OutlineKind> = {
 };
 
 function stopKindOf(node: Parser.SyntaxNode): OutlineKind | null {
+    // Fehler-/fehlende Knoten werden als eigene, navigierbare Stopps behandelt,
+    // damit kaputter Code nicht die Navigation abbricht (Fehlertoleranz).
+    if (node.type === 'ERROR' || node.isError) {
+        return 'error';
+    }
+    if (node.isMissing) {
+        return 'missing';
+    }
     return STOP_KINDS[node.type] ?? null;
 }
 
@@ -109,9 +119,14 @@ export function buildOutline(root: Parser.SyntaxNode): Outline {
         return node;
     }
 
-    /** Durchsucht die benannten Kinder eines transparenten Containers nach Stopps. */
+    // Hinweis: Wir iterieren über ALLE Kinder (children, nicht nur namedChildren),
+    // damit anonyme MISSING-Tokens (z. B. fehlendes Semikolon „;", fehlende „}")
+    // erfasst werden. Vorhandene anonyme Tokens ({, ;, Schlüsselwörter) sind Blätter
+    // ohne Stopp-Art → sie werden geräuschlos übersprungen.
+
+    /** Durchsucht die Kinder eines transparenten Containers nach Stopps. */
     function scan(container: Parser.SyntaxNode, parent: OutlineNode | null): void {
-        for (const child of container.namedChildren) {
+        for (const child of container.children) {
             classify(child, parent);
         }
     }
@@ -120,7 +135,7 @@ export function buildOutline(root: Parser.SyntaxNode): Outline {
     function classify(astNode: Parser.SyntaxNode, parent: OutlineNode | null): void {
         const kind = stopKindOf(astNode);
         if (kind === null) {
-            for (const child of astNode.namedChildren) {
+            for (const child of astNode.children) {
                 classify(child, parent);
             }
             return;
@@ -138,7 +153,7 @@ export function buildOutline(root: Parser.SyntaxNode): Outline {
         }
         if (kind === 'try') {
             descendBody(astNode.childForFieldName('body'), node);
-            for (const child of astNode.namedChildren) {
+            for (const child of astNode.children) {
                 if (child.type === 'catch_clause' || child.type === 'finally_clause') {
                     classify(child, node);
                 }
@@ -151,8 +166,8 @@ export function buildOutline(root: Parser.SyntaxNode): Outline {
             return;
         }
         // Einfache Anweisungen (return, Anweisung, Variablendeklaration, …): nach
-        // verschachtelten Stopps (z. B. Lambdas) durchsuchen — meist keine.
-        for (const child of astNode.namedChildren) {
+        // verschachtelten Stopps (z. B. Lambdas oder fehlenden Tokens) durchsuchen.
+        for (const child of astNode.children) {
             classify(child, node);
         }
     }
@@ -183,7 +198,7 @@ export function buildOutline(root: Parser.SyntaxNode): Outline {
         }
     }
 
-    for (const child of root.namedChildren) {
+    for (const child of root.children) {
         classify(child, null);
     }
     return { linear, byAstId };

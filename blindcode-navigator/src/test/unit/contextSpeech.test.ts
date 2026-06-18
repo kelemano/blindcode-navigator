@@ -127,6 +127,24 @@ suite('contextSpeech — Ansage auf dem Outline-Baum', () => {
         });
     });
 
+    suite('Fehlertoleranz: Beschreibung von ERROR/MISSING', () => {
+        test('fehlendes Semikolon → "fehlendes Semikolon" inkl. Skopus', () => {
+            const o = buildOutline(parseJava('class A {\n void m(){\n  int x = 5\n }\n}').rootNode);
+            const missing = o.linear.find(n => n.kind === 'missing')!;
+            assert.strictEqual(describeOutlineNode(missing), 'fehlendes Semikolon');
+            assert.strictEqual(
+                buildContextString(missing),
+                'fehlendes Semikolon, in Methode m, Klasse A'
+            );
+        });
+
+        test('unparsbarer Code → "Syntaxfehler"', () => {
+            const o = buildOutline(parseJava('class A {\n void m(){\n  @@@\n }\n}').rootNode);
+            const error = o.linear.find(n => n.kind === 'error')!;
+            assert.strictEqual(describeOutlineNode(error), 'Syntaxfehler');
+        });
+    });
+
     suite('describeOutlineNode (Selbst-Beschreibung)', () => {
         test('then-/else-Zweig heißen Dann-Zweig / Sonst-Zweig', () => {
             assert.strictEqual(describeOutlineNode(at('then-branch', 3)), 'Dann-Zweig');

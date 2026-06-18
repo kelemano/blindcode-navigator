@@ -15,6 +15,9 @@ bin ich", und per Ton die Verschachtelungstiefe wahrnehmen.
   wie `else`, `for`, `return`) → direkter Sprung.
 - **Baumansicht** (Alt+T, unteres Panel): zeigt die Struktur grafisch und welche Taste wohin
   führt (Debug-/Tutor-Hilfe).
+- **Fehlertoleranz**: Auch syntaktisch kaputter Code bleibt navigierbar — Syntaxfehler und
+  fehlende Tokens (z. B. „fehlendes Semikolon") werden als eigene Stopps angesagt und mit
+  einem dissonanten Fehler-Ton signalisiert (dank tree-sitter-Fehlertoleranz).
 
 ## Tastenkürzel (im Java-Editor)
 | Taste | Aktion |

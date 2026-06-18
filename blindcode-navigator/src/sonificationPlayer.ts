@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type { OutlineNode } from './navigator';
 import {
     toneForDepth,
+    errorTone,
     sonificationDepth,
     SonificationDepthConfig,
     SonificationDepthMode,
@@ -58,8 +59,14 @@ export class SonificationController implements vscode.Disposable {
         if (!this.enabled) {
             return;
         }
+        const webview = this.ensurePanel();
+        // Fehler-/fehlende Knoten: eigener dissonanter Fehler-Earcon statt Tiefen-Ton.
+        if (node.kind === 'error' || node.kind === 'missing') {
+            webview.postMessage({ type: 'tone', ...errorTone() });
+            return;
+        }
         const depth = sonificationDepth(node, depthConfigFromSettings());
-        this.ensurePanel().postMessage({ type: 'tone', ...toneForDepth(depth) });
+        webview.postMessage({ type: 'tone', ...toneForDepth(depth) });
     }
 
     private ensurePanel(): vscode.Webview {
@@ -179,16 +186,37 @@ settings.json (Befehlspalette <code>⌘⇧P</code> → „Preferences: Open User
     osc.start(t0);
     osc.stop(t0 + dur + rel);
   }
+  // Dissonanter, tiefer Fehler-Earcon (zwei leicht verstimmte Sägezähne).
+  function playError(c, t0, m) {
+    [m.frequency, m.frequency * 1.06].forEach(freq => {
+      const osc = c.createOscillator();
+      const gain = c.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, t0);
+      osc.connect(gain).connect(c.destination);
+      const dur = m.durationMs / 1000, rel = m.releaseMs / 1000;
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(m.volume, t0 + m.attackMs / 1000);
+      gain.gain.linearRampToValueAtTime(0, t0 + dur);
+      osc.start(t0);
+      osc.stop(t0 + dur + rel);
+    });
+  }
   function onTone(m) {
     const c = ensureCtx();
     const t0 = c.currentTime;
-    playTone(c, m.frequency, t0, m);
-    if (m.warning) {
-      // Code-Smell-Warnton: kurzer, höherer Piep kurz nach dem Hauptton.
-      playTone(c, 990, t0 + 0.18, { volume: m.volume, attackMs: 5, decayMs: 30, durationMs: 60, releaseMs: 40 });
+    if (m.error) {
+      playError(c, t0, m);
+      document.getElementById('last').textContent = '⚠ Syntaxfehler / fehlender Code';
+    } else {
+      playTone(c, m.frequency, t0, m);
+      if (m.warning) {
+        // Code-Smell-Warnton: kurzer, höherer Piep kurz nach dem Hauptton.
+        playTone(c, 990, t0 + 0.18, { volume: m.volume, attackMs: 5, decayMs: 30, durationMs: 60, releaseMs: 40 });
+      }
+      document.getElementById('last').textContent =
+        'Tiefe ' + m.depth + ' → ' + m.frequency + ' Hz' + (m.warning ? '  ⚠ zu tief verschachtelt' : '');
     }
-    document.getElementById('last').textContent =
-      'Tiefe ' + m.depth + ' → ' + m.frequency + ' Hz' + (m.warning ? '  ⚠ zu tief verschachtelt' : '');
     document.getElementById('hint').textContent =
       (c.state === 'suspended') ? 'Kein Ton? Einmal „Audio aktivieren" klicken.' : '';
   }

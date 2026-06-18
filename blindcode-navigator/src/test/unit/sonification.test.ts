@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import {
     depthToFrequency,
     toneForDepth,
+    errorTone,
     TONE_DEFAULTS,
     sonificationDepth,
     SonificationDepthConfig,
@@ -90,6 +91,17 @@ suite('sonification — Tiefe → Frequenz (pentatonisch)', () => {
     test('toneForDepth bei Tiefe 8 trägt das Warn-Flag', () => {
         assert.strictEqual(toneForDepth(8).warning, true);
         assert.strictEqual(toneForDepth(8).frequency, 880);
+    });
+
+    test('toneForDepth setzt error = false (normaler Ton)', () => {
+        assert.strictEqual(toneForDepth(3).error, false);
+    });
+
+    test('errorTone = eigener, tiefer Fehler-Earcon (error-Flag, tiefe Frequenz)', () => {
+        const tone = errorTone();
+        assert.strictEqual(tone.error, true);
+        assert.strictEqual(tone.warning, false);
+        assert.ok(tone.frequency <= 130, `tiefe Frequenz erwartet, war ${tone.frequency}`);
     });
 });
 
