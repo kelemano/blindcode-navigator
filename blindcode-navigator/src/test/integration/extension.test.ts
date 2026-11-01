@@ -48,13 +48,14 @@ function setCursor(editor: vscode.TextEditor, line: number, character: number): 
 const activeLine = (editor: vscode.TextEditor): number => editor.selection.active.line;
 
 const CMD = {
-    down: 'blindcode-navigator.navigateDown',
-    up: 'blindcode-navigator.navigateUp',
-    sibling: 'blindcode-navigator.navigateNextSibling',
-    out: 'blindcode-navigator.navigateOut',
+    next: 'blindcode-navigator.navigateNextSibling', // Alt+↓
+    prev: 'blindcode-navigator.navigatePrevSibling', // Alt+↑
+    in: 'blindcode-navigator.navigateIn',            // Alt+→
+    out: 'blindcode-navigator.navigateOut',          // Alt+←
+    readLine: 'blindcode-navigator.readLine',        // Alt+L
 };
 
-suite('Integration: BlindCode Navigator am Golden-File', () => {
+suite('Integration: BlindCode Navigator am Golden-File (Ebenen-Modell)', () => {
 
     suiteSetup(async () => {
         // Java-Datei öffnen → aktiviert die Extension (activationEvents: onLanguage:java),
@@ -71,7 +72,7 @@ suite('Integration: BlindCode Navigator am Golden-File', () => {
     test('alle Befehle sind registriert', async () => {
         const commands = await vscode.commands.getCommands(true);
         for (const command of [
-            CMD.down, CMD.up, CMD.sibling, CMD.out,
+            CMD.next, CMD.prev, CMD.in, CMD.out, CMD.readLine,
             'blindcode-navigator.showOutline',
             'blindcode-navigator.showTree',
             'blindcode-navigator.toggleSonification',
@@ -82,36 +83,29 @@ suite('Integration: BlindCode Navigator am Golden-File', () => {
         }
     });
 
-    test('Alt+↓ von der Klasse führt zur Methode', async () => {
+    test('Alt+→ (hinein) von der Klasse führt zur Methode', async () => {
         const editor = await openGolden();
         setCursor(editor, 0, 13);
-        await vscode.commands.executeCommand(CMD.down);
+        await vscode.commands.executeCommand(CMD.in);
         assert.strictEqual(activeLine(editor), 1); // Methode, Zeile 2
     });
 
-    test('Alt+↓ läuft die Lesereihenfolge ab und erreicht den else-Zweig', async () => {
-        const editor = await openGolden();
-        setCursor(editor, 5, 10); // println, Zeile 6
-        await vscode.commands.executeCommand(CMD.down);
-        assert.strictEqual(activeLine(editor), 8); // Sonst-Zweig (else-Block), Zeile 9
-    });
-
-    test('Down dann Up kehrt zum Ausgangsknoten zurück', async () => {
+    test('Alt+→ (hinein) von der Methode führt zur if-Anweisung', async () => {
         const editor = await openGolden();
         setCursor(editor, 1, 13); // Methode
-        await vscode.commands.executeCommand(CMD.down); // -> if, Zeile 3
-        assert.strictEqual(activeLine(editor), 2);
-        await vscode.commands.executeCommand(CMD.up);   // zurück -> Methode, Zeile 2
-        assert.strictEqual(activeLine(editor), 1);
+        await vscode.commands.executeCommand(CMD.in);
+        assert.strictEqual(activeLine(editor), 2); // äußeres if, Zeile 3
     });
 
-    test('Alt+→ vom Dann-Zweig springt zum Sonst-Zweig', async () => {
+    test('Alt+↓/Alt+↑ wechseln zwischen Geschwistern (Dann- ↔ Sonst-Zweig)', async () => {
         const editor = await openGolden();
         setCursor(editor, 2, 4); // äußeres if
-        await vscode.commands.executeCommand(CMD.down);    // -> Dann-Zweig, Zeile 3
+        await vscode.commands.executeCommand(CMD.in);   // -> Dann-Zweig, Zeile 3
         assert.strictEqual(activeLine(editor), 2);
-        await vscode.commands.executeCommand(CMD.sibling); // -> Sonst-Zweig, Zeile 9
+        await vscode.commands.executeCommand(CMD.next); // nächstes Geschwister -> Sonst-Zweig, Zeile 9
         assert.strictEqual(activeLine(editor), 8);
+        await vscode.commands.executeCommand(CMD.prev); // vorheriges Geschwister -> Dann-Zweig, Zeile 3
+        assert.strictEqual(activeLine(editor), 2);
     });
 
     test('Alt+← geht heraus (return -1 -> äußeres if über den Sonst-Zweig)', async () => {
@@ -123,12 +117,26 @@ suite('Integration: BlindCode Navigator am Golden-File', () => {
         assert.strictEqual(activeLine(editor), 2);
     });
 
+    test('Kante: Alt+↓ auf letztem Geschwister bewegt den Cursor nicht', async () => {
+        const editor = await openGolden();
+        setCursor(editor, 11, 4); // return x (letztes Element der Methode), Zeile 12
+        await vscode.commands.executeCommand(CMD.next);
+        assert.strictEqual(activeLine(editor), 11); // unverändert
+    });
+
+    test('Alt+L liest die Zeile vor, ohne den Cursor zu bewegen', async () => {
+        const editor = await openGolden();
+        setCursor(editor, 5, 10); // println, Zeile 6
+        await vscode.commands.executeCommand(CMD.readLine);
+        assert.strictEqual(activeLine(editor), 5); // unverändert
+    });
+
     test('Bedingung A: Navigation tut nichts (Cursor bleibt)', async () => {
         await setCondition('A');
         await delay(80);
         const editor = await openGolden();
         setCursor(editor, 0, 13);
-        await vscode.commands.executeCommand(CMD.down);
+        await vscode.commands.executeCommand(CMD.in);
         assert.strictEqual(activeLine(editor), 0); // unverändert
         await setCondition('C');
         await delay(80);
@@ -137,7 +145,7 @@ suite('Integration: BlindCode Navigator am Golden-File', () => {
     test('nach Rückschalten auf C funktioniert die Navigation wieder', async () => {
         const editor = await openGolden();
         setCursor(editor, 0, 13);
-        await vscode.commands.executeCommand(CMD.down);
+        await vscode.commands.executeCommand(CMD.in);
         assert.strictEqual(activeLine(editor), 1);
     });
 
@@ -153,9 +161,9 @@ suite('Integration: BlindCode Navigator am Golden-File', () => {
         const doc = await vscode.workspace.openTextDocument({ language: 'java', content: broken });
         const editor = await vscode.window.showTextDocument(doc);
         setCursor(editor, 0, 13);
-        // Mehrfach navigieren — darf nicht werfen und der Cursor soll sich bewegen.
-        for (let i = 0; i < 6; i++) {
-            await vscode.commands.executeCommand(CMD.down);
+        // Rein/runter im Wechsel — darf nicht werfen (kaputter Code enthält ERROR/MISSING).
+        for (let i = 0; i < 8; i++) {
+            await vscode.commands.executeCommand(i % 2 === 0 ? CMD.in : CMD.next);
         }
         assert.ok(activeLine(editor) >= 0); // erreichbar, kein Absturz
     });
