@@ -40,6 +40,13 @@ export interface ToneCommand {
     warning: boolean;
     /** true → eigener, dissonanter Fehler-Earcon (Syntaxfehler/fehlender Token). */
     error: boolean;
+    /** true → Status-Earcon „bereit" (zwei Noten aufwärts), KEINE Sonifikation. */
+    greeting: boolean;
+    /**
+     * > 0 → Zähl-Earcon für „Wo bin ich?": Ankerton + so viele Klicks wie Ebenen.
+     * Der Wert ist die Anzahl der KLICKS (Tiefe 0 → 0 Klicks, nur der Anker).
+     */
+    countClicks?: number;
     durationMs: number;
     volume: number;
     attackMs: number;
@@ -57,11 +64,77 @@ export function errorTone(): ToneCommand {
         frequency: 110, // tief (A2)
         warning: false,
         error: true,
+        greeting: false,
         durationMs: 260,
         volume: 0.3,
         attackMs: 5,
         decayMs: 60,
         releaseMs: 140,
+    };
+}
+
+/** Parameter des Zähl-Earcons („Wo bin ich?", Alt+W). Siehe countTone(). */
+export const COUNT_DEFAULTS = {
+    /** Ankerton: tief und weich — „Boden", ab hier wird gezählt. */
+    anchorHz: 165,
+    anchorMs: 200,
+    /** Klick: kurz und hoch, bewusst KEIN Ton aus der pentatonischen Reihe. */
+    clickHz: 1320,
+    clickMs: 40,
+    /** Abstand von Klick-Anfang zu Klick-Anfang (Zählbarkeit ~130 ms). */
+    clickSpacingMs: 130,
+    /** Pause zwischen Anker und erstem Klick. */
+    gapMs: 120,
+    /** Nachlauf (Stille) am Ende — verlängert die WAV-Datei, siehe renderToneWav. */
+    releaseMs: 60,
+} as const;
+
+/** Höchste Ebenenzahl, für die ein Zähl-Earcon vorgerendert wird. */
+export const COUNT_MAX = 8;
+
+/**
+ * Zähl-Earcon für „Wo bin ich?" (Alt+W) — die ABSOLUTE Tiefe als Anzahl.
+ *
+ * Zweite, bewusst andere Sonifikations-Abbildung neben der Tonhöhe (Kap. 4.4,
+ * Entwurfsalternativen). Begründung der Aufteilung:
+ *   - Während der BEWEGUNG zählt die Änderung („tiefer/flacher") — das leistet die
+ *     Tonhöhe pre-attentiv und in konstanter Dauer.
+ *   - Auf ANFRAGE zählt der absolute Wert — den liefert eine Anzahl eindeutig, ohne
+ *     Referenzton und ohne musikalische Vorbildung (absolutes Gehör ist selten).
+ *     Hier stört die variable Dauer nicht, weil nicht navigiert wird.
+ *
+ * Form: Ankerton + `clicks` Klicks. Der Anker löst zwei Probleme auf einmal —
+ *   1. Tiefe 0 (Klasse/Methode: keine Kontroll-Verschachtelung) wäre sonst STILLE,
+ *      und Stille darf in einem barrierefreien Interface nie Information tragen:
+ *      sie ist von „kaputt" oder „nicht gedrückt" nicht unterscheidbar.
+ *   2. Er ist der Zähl-Auftakt („ab jetzt zählen") — ohne ihn weiß man beim ersten
+ *      Klick nicht, ob man den Anfang verpasst hat.
+ * Die Klicks haben eine KONSTANTE Höhe: Anzahl und Tonhöhe bleiben orthogonale
+ * Abbildungen, sonst würden beide Varianten vermischt.
+ */
+export function countTone(clicks: number): ToneCommand {
+    const safeClicks = Math.max(0, Math.min(COUNT_MAX, Math.floor(clicks)));
+    // Ende des letzten hörbaren Ereignisses …
+    const lastEventEndMs = safeClicks > 0
+        ? COUNT_DEFAULTS.anchorMs + COUNT_DEFAULTS.gapMs
+            + (safeClicks - 1) * COUNT_DEFAULTS.clickSpacingMs + COUNT_DEFAULTS.clickMs
+        : COUNT_DEFAULTS.anchorMs;
+    // … plus Nachlauf: renderToneWav hängt releaseMs an, die Datei ist so lang.
+    // durationMs MUSS die Dateilänge abdecken, sonst startet die Sprachansage
+    // (die daran terminiert wird) noch während der Ton läuft.
+    const totalMs = lastEventEndMs + COUNT_DEFAULTS.releaseMs;
+    return {
+        depth: safeClicks,
+        frequency: COUNT_DEFAULTS.anchorHz,
+        warning: false,
+        error: false,
+        greeting: false,
+        countClicks: safeClicks,
+        durationMs: totalMs,
+        volume: 0.28,
+        attackMs: 8,
+        decayMs: COUNT_DEFAULTS.anchorMs - 8,
+        releaseMs: COUNT_DEFAULTS.releaseMs,
     };
 }
 
@@ -143,10 +216,40 @@ export function toneForDepth(depth: number): ToneCommand {
         frequency,
         warning,
         error: false,
+        greeting: false,
         durationMs: TONE_DEFAULTS.durationMs,
         volume: TONE_DEFAULTS.volume,
         attackMs: TONE_DEFAULTS.attackMs,
         decayMs: TONE_DEFAULTS.decayMs,
         releaseMs: TONE_DEFAULTS.releaseMs,
+    };
+}
+
+/**
+ * Status-Earcon „System bereit" (beim Aktivieren der Extension).
+ *
+ * AUSDRÜCKLICH KEIN TEIL DER SONIFIKATION: Dieser Ton bildet keine Codestruktur ab,
+ * sondern meldet einen Systemzustand — wie der Fehler-Earcon, nur positiv. Deshalb
+ * ist er in den Bedingungen B UND C identisch und unabhängig von
+ * `blindcode.sonification`; die manipulierte Variable (Tiefe → Tonhöhe während der
+ * Navigation) bleibt unberührt. In Bedingung A entfällt er wie alles andere.
+ *
+ * Form: ZWEI Noten aufwärts (Grundton → Quinte, 440 → 660 Hz). Die Tiefen-Töne sind
+ * immer EINZELNE Anschläge — durch die Zweistimmigkeit ist das Startsignal nicht mit
+ * einem Tiefen-Ton verwechselbar. Beide Frequenzen stammen aus der pentatonischen
+ * Reihe (Tiefe 3 und 5), das Signal bleibt also im Klangfamilien-Kontext.
+ */
+export function startTone(): ToneCommand {
+    return {
+        depth: 0,
+        frequency: 440, // Grundton; die Quinte darüber ergänzt wavSynth
+        warning: false,
+        error: false,
+        greeting: true,
+        durationMs: 180,
+        volume: 0.25, // etwas leiser als die Navigations-Töne (Begrüßung, kein Signalton)
+        attackMs: 8,
+        decayMs: 70,
+        releaseMs: 120,
     };
 }

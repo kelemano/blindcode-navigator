@@ -1,15 +1,34 @@
 import * as vscode from 'vscode';
-import type { OutlineNode } from './navigator';
+import * as fs from 'fs';
+import * as path from 'path';
+import { spawn, ChildProcess } from 'child_process';
+import type { NavMovement, OutlineNode } from './navigator';
 import {
+    ToneCommand,
     toneForDepth,
     errorTone,
+    startTone,
+    countTone,
+    COUNT_MAX,
+    depthToFrequency,
     sonificationDepth,
     SonificationDepthConfig,
     SonificationDepthMode,
 } from './sonification';
+import { renderToneWav } from './wavSynth';
 
-/** Liest die Tiefen-Konfiguration der Sonifikation aus den Einstellungen. */
-function depthConfigFromSettings(): SonificationDepthConfig {
+/** macOS-Systemplayer. Bewusst macOS-only (Studien-/Entwicklungsplattform). */
+const AFPLAY = '/usr/bin/afplay';
+
+/** Version im Dateinamen → nach Parameteränderung werden Töne neu gerendert. */
+const TONE_VERSION = 'v1';
+
+/**
+ * Liest die Tiefen-Konfiguration der Sonifikation aus den Einstellungen.
+ * Exportiert, damit die Baumansicht DIESELBE Projektion anzeigen kann, die auch
+ * vertont wird — sonst sähe die Begleitung eine andere Tiefe als gehört wird.
+ */
+export function depthConfigFromSettings(): SonificationDepthConfig {
     const config = vscode.workspace.getConfiguration('blindcode.sonification');
     return {
         depthMode: config.get<SonificationDepthMode>('depthMode', 'control'),
@@ -18,18 +37,25 @@ function depthConfigFromSettings(): SonificationDepthConfig {
 }
 
 /**
- * VS-Code-Adapter für die Sonifikation (Kap. 5.3). Hält ein Webview, in dem die
- * Web Audio API läuft (der Node.js-Kontext der Extension hat kein AudioContext —
- * Designentscheidung Webview, Kap. 4.4). `play(depth)` schickt die in
- * sonification.ts berechneten Tonparameter per postMessage an das Webview.
+ * VS-Code-Adapter für die Sonifikation (Kap. 5.3).
+ *
+ * Der Ton wird im Extension-Host als WAV synthetisiert (wavSynth.ts, dieselben
+ * Parameter wie sonification.ts) und über den System-Player `afplay` abgespielt.
+ * Dadurch entfällt die frühere Webview mit ihrer Autoplay-Sperre: Für die (blinden)
+ * Nutzer:innen spielt der Ton ohne sichtbares Panel und ohne einmaligen Klick —
+ * Tastendruck → Ton. Backend ist macOS-only.
  *
  * Additiv & read-only gegenüber Navigation/Sprache. Über `enabled` an-/abschaltbar
- * (für die Studienbedingungen A/B/C in M5: B = ohne Ton, C = mit Ton).
+ * (Studienbedingungen A/B/C: B = ohne Ton, C = mit Ton).
  */
 export class SonificationController implements vscode.Disposable {
-    private panel: vscode.WebviewPanel | undefined;
+    /** key → WAV-Dateipfad (Tiefen 1..6, 'warn', 'error'). Einmalig gerendert. */
+    private readonly files = new Map<string, string>();
+    private rendered = false;
+    /** Zuletzt gestarteter afplay-Prozess (wird bei neuem Ton beendet). */
+    private current: ChildProcess | undefined;
 
-    constructor(private enabled: boolean) {}
+    constructor(private enabled: boolean, private readonly storageDir: string) {}
 
     isEnabled(): boolean {
         return this.enabled;
@@ -38,9 +64,7 @@ export class SonificationController implements vscode.Disposable {
     setEnabled(on: boolean): void {
         this.enabled = on;
         if (!on) {
-            // Panel schließen, damit in Bedingung B garantiert kein Ton läuft.
-            this.panel?.dispose();
-            this.panel = undefined;
+            this.stopCurrent(); // in Bedingung B garantiert kein Ton
         }
     }
 
@@ -51,192 +75,137 @@ export class SonificationController implements vscode.Disposable {
     }
 
     /**
-     * Spielt den Ton für einen Knoten (no-op, wenn deaktiviert). Die Tonhöhen-Tiefe
-     * ist eine konfigurierbare Projektion aus dem Outline-Knoten (depthMode /
-     * customDepthNodeTypes) — siehe sonificationDepth.
+     * Spielt den Ton für einen Knoten (no-op, wenn deaktiviert oder nicht macOS).
+     * Die Tonhöhen-Tiefe ist eine konfigurierbare Projektion aus dem Outline-Knoten
+     * (depthMode / customDepthNodeTypes) — siehe sonificationDepth.
      */
-    play(node: OutlineNode): void {
-        if (!this.enabled) {
+    play(node: OutlineNode, movement: NavMovement): void {
+        if (!this.enabled || process.platform !== 'darwin') {
             return;
         }
-        const webview = this.ensurePanel();
-        // Fehler-/fehlende Knoten: eigener dissonanter Fehler-Earcon statt Tiefen-Ton.
-        if (node.kind === 'error' || node.kind === 'missing') {
-            webview.postMessage({ type: 'tone', ...errorTone() });
+        // `movement` wird von der aktuellen Abbildung (Tiefe → Tonhöhe) noch nicht
+        // ausgewertet — bewusst: Erst ist die Schnittstelle da, die Abbildung bleibt
+        // unverändert. Damit sind bewegungsabhängige Varianten (z. B. „bei next/prev
+        // die Position auf der Ebene statt der Tiefe") ohne Umbau erprobbar.
+        void movement;
+        this.ensureRendered();
+        const key = this.keyFor(node);
+        const file = this.files.get(key);
+        if (file) {
+            this.playFile(file);
+        }
+    }
+
+    /**
+     * Spielt das Status-Earcon „bereit" (Aktivierung der Extension).
+     *
+     * Bewusst UNABHÄNGIG von `enabled`: Das Startsignal ist keine Sonifikation — es
+     * bildet keine Codestruktur ab, sondern meldet den Systemzustand. Es soll daher
+     * auch in Bedingung B kommen, in der die Struktur-Sonifikation aus ist, damit
+     * beide Bedingungen dieselbe Rückmeldung „das Werkzeug läuft" geben.
+     * Bedingung A wird eine Ebene höher (extension.ts) abgefangen.
+     */
+    playStart(): void {
+        if (process.platform !== 'darwin') {
             return;
+        }
+        this.ensureRendered();
+        const file = this.files.get('start');
+        if (file) {
+            this.playFile(file);
+        }
+    }
+
+    /**
+     * Spielt das Zähl-Earcon für „Wo bin ich?" (Alt+W) und liefert dessen Dauer in ms
+     * (0, wenn nichts abgespielt wurde). Die Dauer braucht der Aufrufer, um die
+     * Sprachansage danach zu terminieren — sonst überlagern sich Klicks und Screenreader.
+     *
+     * ANDERS ALS das Startsignal respektiert dieses Earcon `enabled`: Es bildet die
+     * TIEFE EINES CODE-KNOTENS ab und ist damit Struktur-Sonifikation — also genau die
+     * manipulierte Variable. In Bedingung B (ohne Sonifikation) bleibt Alt+W deshalb
+     * rein sprachlich; erst in C kommt die Zählung hinzu.
+     */
+    playCountForNode(node: OutlineNode): number {
+        if (!this.enabled || process.platform !== 'darwin') {
+            return 0;
         }
         const depth = sonificationDepth(node, depthConfigFromSettings());
-        webview.postMessage({ type: 'tone', ...toneForDepth(depth) });
-    }
-
-    private ensurePanel(): vscode.Webview {
-        if (this.panel) {
-            return this.panel.webview;
+        const clicks = Math.max(0, Math.min(COUNT_MAX, Math.floor(depth)));
+        this.ensureRendered();
+        const file = this.files.get(`count-${clicks}`);
+        if (!file) {
+            return 0;
         }
-        this.panel = vscode.window.createWebviewPanel(
-            'blindcodeSonification',
-            'BlindCode Sonifikation',
-            { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        this.panel.webview.html = this.html();
-        this.panel.webview.onDidReceiveMessage(message => {
-            if (message?.type === 'ready') {
-                this.postConfig();
-            } else if (message?.type === 'setDepthMode' && typeof message.mode === 'string') {
-                void vscode.workspace
-                    .getConfiguration('blindcode.sonification')
-                    .update('depthMode', message.mode, vscode.ConfigurationTarget.Global)
-                    .then(() => this.postConfig());
+        this.playFile(file);
+        return countTone(clicks).durationMs;
+    }
+
+    /** Ordnet einem Knoten die passende Ton-Datei zu. */
+    private keyFor(node: OutlineNode): string {
+        // Fehler-/fehlende Knoten: eigener dissonanter Fehler-Earcon statt Tiefen-Ton.
+        if (node.kind === 'error' || node.kind === 'missing') {
+            return 'error';
+        }
+        const depth = sonificationDepth(node, depthConfigFromSettings());
+        if (depthToFrequency(depth).warning) {
+            return 'warn';
+        }
+        return String(Math.max(1, Math.min(6, Math.floor(depth))));
+    }
+
+    /** Rendert die Tonpalette einmalig als WAV-Dateien (Tiefen 1..6, Warn, Fehler). */
+    private ensureRendered(): void {
+        if (this.rendered) {
+            return;
+        }
+        const specs: Array<[string, ToneCommand]> = [];
+        for (let level = 1; level <= 6; level++) {
+            specs.push([String(level), toneForDepth(level)]);
+        }
+        specs.push(['warn', toneForDepth(7)]); // 880 Hz + Warn-Piep
+        specs.push(['error', errorTone()]);
+        specs.push(['start', startTone()]); // Status-Earcon, keine Sonifikation
+        // Zähl-Earcons für „Wo bin ich?" (Alt+W): Anker + 0..COUNT_MAX Klicks.
+        for (let clicks = 0; clicks <= COUNT_MAX; clicks++) {
+            specs.push([`count-${clicks}`, countTone(clicks)]);
+        }
+        try {
+            fs.mkdirSync(this.storageDir, { recursive: true });
+            for (const [key, cmd] of specs) {
+                const file = path.join(this.storageDir, `bcnav-tone-${TONE_VERSION}-${key}.wav`);
+                if (!fs.existsSync(file)) {
+                    fs.writeFileSync(file, renderToneWav(cmd));
+                }
+                this.files.set(key, file);
             }
-        });
-        this.panel.onDidDispose(() => { this.panel = undefined; });
-        return this.panel.webview;
+        } catch {
+            // Schreiben fehlgeschlagen → lieber Stille als Absturz.
+        }
+        this.rendered = true;
     }
 
-    /** Sendet den aktuellen Tiefen-Modus an das Panel (Auswahl synchron halten). */
-    private postConfig(): void {
-        this.panel?.webview.postMessage({
-            type: 'config',
-            depthMode: depthConfigFromSettings().depthMode,
-        });
+    /** Spielt eine WAV-Datei über afplay; beendet einen noch laufenden Ton. */
+    private playFile(file: string): void {
+        this.stopCurrent();
+        try {
+            const child = spawn(AFPLAY, [file], { stdio: 'ignore' });
+            // Fehlt afplay o. Ä. → stiller No-op statt unbehandeltem Fehler.
+            child.on('error', () => { /* ignore */ });
+            this.current = child;
+        } catch {
+            // ignore
+        }
     }
 
-    /** Wird vom Konfigurations-Listener aufgerufen, falls sich die Einstellungen ändern. */
-    refreshConfig(): void {
-        this.postConfig();
+    private stopCurrent(): void {
+        if (this.current) {
+            this.current.kill();
+            this.current = undefined;
+        }
     }
 
     dispose(): void {
-        this.panel?.dispose();
-        this.panel = undefined;
-    }
-
-    private html(): string {
-        const nonce = String(Math.random()).slice(2);
-        return `<!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
-<style nonce="${nonce}">
-  body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 10px; }
-  h2 { font-size: 1em; margin: 0 0 6px; }
-  h3 { font-size: .9em; margin: 14px 0 4px; }
-  p { color: var(--vscode-descriptionForeground); }
-  #last { font-size: 1.4em; margin: 8px 0; }
-  button { font: inherit; padding: 4px 10px; }
-  label { display: block; margin: 6px 0 2px; }
-  select { font: inherit; padding: 3px; min-width: 16em; }
-  .row { margin: 8px 0; }
-  code { background: var(--vscode-textCodeBlock-background); padding: 0 4px; border-radius: 3px; }
-  pre { background: var(--vscode-textCodeBlock-background); padding: 8px; border-radius: 4px; overflow:auto; }
-  .muted { color: var(--vscode-descriptionForeground); font-size: .9em; }
-</style>
-</head>
-<body>
-<h2>BlindCode Sonifikation (Audio)</h2>
-<p>Tiefe → Tonhöhe (tiefer verschachtelt = höher). Dieses Panel erzeugt nur den Ton.</p>
-<div id="last">—</div>
-<p id="hint"></p>
-<button id="enable" type="button">Audio aktivieren</button>
-
-<div class="row">
-  <label for="depthMode">Tiefen-Modus (welche Knoten als Ebene zählen):</label>
-  <select id="depthMode">
-    <option value="control">control — nur Kontrollstrukturen (Standard) · println = Tiefe 4 (550 Hz)</option>
-    <option value="control-and-methods">control-and-methods — + Methode · println = 5 (660 Hz)</option>
-    <option value="full-scope">full-scope — Klasse + Methode · println = 6 (880 Hz)</option>
-  </select>
-  <p class="muted">Ändert nur die Tonhöhe — Baumansicht und Sprachausgabe bleiben gleich.
-  Für die Studie den Standard <code>control</code> lassen.</p>
-</div>
-
-<h3>Auch per Einstellungen / Terminal</h3>
-<p class="muted">Einstellungen-UI: <code>⌘,</code> → nach <code>blindcode.sonification.depthMode</code> suchen.<br>
-settings.json (Befehlspalette <code>⌘⇧P</code> → „Preferences: Open User Settings (JSON)") bzw. per Terminal in die Datei schreiben:</p>
-<pre>{
-  "blindcode.sonification.depthMode": "control",
-  "blindcode.sonification.customDepthNodeTypes": ["if_statement","for_statement"]
-}</pre>
-<p class="muted">macOS-Pfad: <code>~/Library/Application Support/Code/User/settings.json</code>
-(Insiders: <code>Code - Insiders</code>). <code>customDepthNodeTypes</code> überschreibt den Modus
-(nur die gelisteten tree-sitter-Knotentypen zählen). Ton an/aus: <code>Alt+S</code>.</p>
-
-<script nonce="${nonce}">
-  const vscode = acquireVsCodeApi();
-  let ctx;
-  function ensureCtx() {
-    if (!ctx) { ctx = new (window.AudioContext || window.webkitAudioContext)(); }
-    if (ctx.state === 'suspended') { ctx.resume(); }
-    return ctx;
-  }
-  // Ein Ton mit ADSR-Hüllkurve (sustain 0 → kurzer „Pluck").
-  function playTone(c, freq, t0, m) {
-    const osc = c.createOscillator();
-    const gain = c.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, t0);
-    osc.connect(gain).connect(c.destination);
-    const a = m.attackMs / 1000, d = m.decayMs / 1000;
-    const dur = m.durationMs / 1000, rel = m.releaseMs / 1000;
-    gain.gain.setValueAtTime(0, t0);
-    gain.gain.linearRampToValueAtTime(m.volume, t0 + a);
-    gain.gain.linearRampToValueAtTime(0, t0 + a + d); // sustain = 0
-    osc.start(t0);
-    osc.stop(t0 + dur + rel);
-  }
-  // Dissonanter, tiefer Fehler-Earcon (zwei leicht verstimmte Sägezähne).
-  function playError(c, t0, m) {
-    [m.frequency, m.frequency * 1.06].forEach(freq => {
-      const osc = c.createOscillator();
-      const gain = c.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(freq, t0);
-      osc.connect(gain).connect(c.destination);
-      const dur = m.durationMs / 1000, rel = m.releaseMs / 1000;
-      gain.gain.setValueAtTime(0, t0);
-      gain.gain.linearRampToValueAtTime(m.volume, t0 + m.attackMs / 1000);
-      gain.gain.linearRampToValueAtTime(0, t0 + dur);
-      osc.start(t0);
-      osc.stop(t0 + dur + rel);
-    });
-  }
-  function onTone(m) {
-    const c = ensureCtx();
-    const t0 = c.currentTime;
-    if (m.error) {
-      playError(c, t0, m);
-      document.getElementById('last').textContent = '⚠ Syntaxfehler / fehlender Code';
-    } else {
-      playTone(c, m.frequency, t0, m);
-      if (m.warning) {
-        // Code-Smell-Warnton: kurzer, höherer Piep kurz nach dem Hauptton.
-        playTone(c, 990, t0 + 0.18, { volume: m.volume, attackMs: 5, decayMs: 30, durationMs: 60, releaseMs: 40 });
-      }
-      document.getElementById('last').textContent =
-        'Tiefe ' + m.depth + ' → ' + m.frequency + ' Hz' + (m.warning ? '  ⚠ zu tief verschachtelt' : '');
-    }
-    document.getElementById('hint').textContent =
-      (c.state === 'suspended') ? 'Kein Ton? Einmal „Audio aktivieren" klicken.' : '';
-  }
-  document.getElementById('enable').addEventListener('click', () => {
-    ensureCtx();
-    document.getElementById('hint').textContent = '';
-  });
-  const depthModeSelect = document.getElementById('depthMode');
-  depthModeSelect.addEventListener('change', () => {
-    vscode.postMessage({ type: 'setDepthMode', mode: depthModeSelect.value });
-  });
-  window.addEventListener('message', e => {
-    const m = e.data;
-    if (!m) { return; }
-    if (m.type === 'tone') { onTone(m); }
-    else if (m.type === 'config') { depthModeSelect.value = m.depthMode; }
-  });
-  vscode.postMessage({ type: 'ready' });
-</script>
-</body>
-</html>`;
+        this.stopCurrent();
     }
 }
