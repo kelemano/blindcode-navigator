@@ -3,9 +3,21 @@
 Alle nennenswerten Änderungen an „BlindCode Navigator". Format angelehnt an
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 
-## [Unveröffentlicht] — Barrierefreiheit, zweite Sonifikation, Werkzeuge für die Begleitung
+## [0.2.0] — 2026-11-01 — Barrierefreiheit, zweite Sonifikation, Werkzeuge für die Begleitung
 
 ### Behoben
+- **Folgenlose Tastendrücke blieben stumm.** Fünf Meldungen erschienen nur als
+  Benachrichtigung des Editors: letzter Knoten auf einer Ebene, oberste Ebene erreicht,
+  keine Struktur an der Cursorposition oder in der Datei. Eine Benachrichtigung ist
+  sichtbar, wird aber nicht vorgelesen, solange der Fokus im Editor bleibt — für blinde
+  Nutzer:innen blieb der Tastendruck also ohne jede Rückmeldung. Im rein auditiven Zugang
+  ist Stille die einzige Antwort, die sich nicht deuten lässt: Sie ist von einer nicht
+  angekommenen Taste, einem abgestürzten Werkzeug und einem verstummten Screenreader
+  nicht zu unterscheiden. **In der Studie blieb eine Person genau hier hängen**, während
+  sie das Ebenenmodell lernte, und drückte wiederholt gegen eine Kante, die nie
+  antwortete. Alle fünf laufen jetzt zusätzlich über die Sprachausgabe, bewusst auch im
+  stummen Modus. Dasselbe gilt für Alt+W ohne Strukturknoten und für Alt+S, wo der neue
+  Zustand sich nun selbst ansagt.
 - **Die erste Ansage einer Sitzung ging verloren.** Die Sprach-Webview bekam ihren Text,
   bevor ihr Skript geladen war; VS Code puffert solche Nachrichten nicht. Behoben durch
   einen `ready`-Handshake plus Zwischenpuffer. Betraf jeden Sitzungsbeginn im Standardmodus.
