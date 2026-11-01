@@ -2,7 +2,7 @@
   "name": "blindcode-navigator",
   "displayName": "BlindCode Navigator",
   "description": "Strukturorientierte Audio-Navigation und Sonifikation für blinde Java-Anfänger:innen.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "blindcode",
   "icon": "resources/icon.png",
   "license": "MIT",
