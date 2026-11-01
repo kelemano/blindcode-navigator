@@ -185,6 +185,38 @@ function scopeQualifier(node: OutlineNode): string | null {
  */
 export type SpeechVerbosity = 'high' | 'medium' | 'low';
 
+/**
+ * Sprach-Modus = Ausführlichkeit plus der Zustand `off`.
+ *
+ * `off` schaltet nur die AUTOMATISCHEN Ansagen (bei jeder Navigation) stumm; die
+ * ausdrücklich angefragten (Alt+W „Wo bin ich?", Alt+L „Zeile vorlesen") sprechen
+ * weiter. Dadurch ist der stumme Modus gefahrlos: Man navigiert schnell allein nach
+ * Gehör und kann jederzeit nachfragen, ohne sich verlieren zu können.
+ */
+export type SpeechMode = SpeechVerbosity | 'off';
+
+/** Reihenfolge, die Alt+M durchschaltet (schließt sich zum Ring). */
+export const SPEECH_MODE_CYCLE: readonly SpeechMode[] = ['high', 'medium', 'low', 'off'];
+
+/** Selbstansage je Modus — man hört immer, wo man gelandet ist. */
+export const SPEECH_MODE_LABELS: Record<SpeechMode, string> = {
+    high: 'Sprache: volle Kette',
+    medium: 'Sprache: Methode und Klasse',
+    low: 'Sprache: nur das Element',
+    off: 'Sprache aus. Alt+W und Alt+L sprechen weiterhin.',
+};
+
+/** Nächster Modus im Ring (Alt+M). */
+export function nextSpeechMode(current: SpeechMode): SpeechMode {
+    const index = SPEECH_MODE_CYCLE.indexOf(current);
+    return SPEECH_MODE_CYCLE[(index + 1) % SPEECH_MODE_CYCLE.length];
+}
+
+/** Ausführlichkeit für AUSDRÜCKLICH angeforderte Ansagen: `off` → volle Auskunft. */
+export function explicitVerbosity(mode: SpeechMode): SpeechVerbosity {
+    return mode === 'off' ? 'high' : mode;
+}
+
 /** „Anker"-Skopusse, die in medium erhalten bleiben (das namentliche „wo"). */
 const ANCHOR_KINDS = new Set<OutlineKind>([
     'method', 'constructor', 'class', 'interface', 'enum',
@@ -226,6 +258,29 @@ function scopeQualifiers(node: OutlineNode, verbosity: SpeechVerbosity): string[
  */
 export function buildContextString(node: OutlineNode, verbosity: SpeechVerbosity = 'high'): string {
     return [describeOutlineNode(node), ...scopeQualifiers(node, verbosity)].join(', ');
+}
+
+/**
+ * Kurzliste der Kinder eines Knotens (deren Selbst-Beschreibungen), z. B.
+ * „if-Anweisung, return-Anweisung". Leer, wenn der Knoten keine tiefere Ebene hat.
+ */
+export function describeChildrenSummary(node: OutlineNode): string {
+    return node.children.map(describeOutlineNode).join(', ');
+}
+
+/**
+ * Ansage beim Eintauchen (Alt+→) in einen Knoten: benennt die betretene Ebene und
+ * zählt ihren Inhalt auf — „Überblick zuerst". Beispiel:
+ *   „Methode calculate betreten, 2 Elemente: if-Anweisung, return-Anweisung".
+ * Ohne Kinder → „… hat keine tiefere Ebene".
+ */
+export function buildEntryAnnouncement(node: OutlineNode): string {
+    const count = node.children.length;
+    if (count === 0) {
+        return `${describeOutlineNode(node)} hat keine tiefere Ebene`;
+    }
+    const noun = count === 1 ? 'Element' : 'Elemente';
+    return `${describeOutlineNode(node)} betreten, ${count} ${noun}: ${describeChildrenSummary(node)}`;
 }
 
 /**

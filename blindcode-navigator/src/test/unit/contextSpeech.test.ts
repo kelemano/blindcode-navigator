@@ -1,6 +1,12 @@
 import * as assert from 'assert';
 import { buildOutline, Outline, OutlineNode } from '../../navigator';
-import { buildContextString, describeOutlineNode, outlineMatches } from '../../contextSpeech';
+import {
+    buildContextString,
+    describeOutlineNode,
+    outlineMatches,
+    describeChildrenSummary,
+    buildEntryAnnouncement,
+} from '../../contextSpeech';
 import { parseJava } from './helpers';
 
 const SRC = `public class MathLogic {
@@ -142,6 +148,29 @@ suite('contextSpeech — Ansage auf dem Outline-Baum', () => {
             const o = buildOutline(parseJava('class A {\n void m(){\n  @@@\n }\n}').rootNode);
             const error = o.linear.find(n => n.kind === 'error')!;
             assert.strictEqual(describeOutlineNode(error), 'Syntaxfehler');
+        });
+    });
+
+    suite('Eintauch-Ansage (Alt+→): buildEntryAnnouncement / describeChildrenSummary', () => {
+        test('Klasse zählt ihre Methode auf', () => {
+            assert.strictEqual(describeChildrenSummary(at('class', 1)), 'Methode calculate');
+            assert.strictEqual(
+                buildEntryAnnouncement(at('class', 1)),
+                'Klasse MathLogic betreten, 1 Element: Methode calculate'
+            );
+        });
+        test('Methode mit zwei Elementen: if und return x', () => {
+            assert.strictEqual(
+                buildEntryAnnouncement(at('method', 2)),
+                'Methode calculate betreten, 2 Elemente: if-Anweisung, return-Anweisung'
+            );
+        });
+        test('Blatt (println) hat keine tiefere Ebene', () => {
+            assert.strictEqual(describeChildrenSummary(at('statement', 6)), '');
+            assert.strictEqual(
+                buildEntryAnnouncement(at('statement', 6)),
+                'Anweisung hat keine tiefere Ebene'
+            );
         });
     });
 
