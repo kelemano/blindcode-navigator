@@ -16,6 +16,8 @@ line by line.
 [![tree-sitter](https://img.shields.io/badge/parser-tree--sitter-brightgreen)](https://tree-sitter.github.io/tree-sitter/)
 [![Tests](https://img.shields.io/badge/tests-104%20unit%20%2B%2011%20integration-success)](#testing)
 
+Deutsche Fassung der Dokumentation: [`README.de.md`](blindcode-navigator/README.de.md)
+
 </div>
 
 ---
@@ -33,6 +35,7 @@ line by line.
 - [Testing](#testing)
 - [Known limitations](#known-limitations)
 - [Research context](#research-context)
+- [Citing this work](#citing-this-work)
 - [License](#license)
 
 ---
@@ -351,6 +354,13 @@ the other way round:
 Source comments are in German because they reference sections of the thesis.
 See [`ARCHITECTURE.md`](blindcode-navigator/ARCHITECTURE.md) for the design and
 [`CHANGELOG.md`](blindcode-navigator/CHANGELOG.md) for the history.
+
+---
+
+## Citing this work
+
+Repository metadata for citation lives in [`CITATION.cff`](CITATION.cff);
+GitHub renders it as *Cite this repository* in the sidebar.
 
 ---
 

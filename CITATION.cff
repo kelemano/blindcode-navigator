@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+title: BlindCode Navigator
+message: >-
+  If you use this software or refer to it in academic work,
+  please cite it using the metadata below.
+type: software
+authors:
+  - family-names: Keleman
+    given-names: Olha
+    affiliation: Technische Universität Darmstadt
+version: 0.2.0
+date-released: '2026-11-01'
+license: MIT
+repository-code: 'https://github.com/kelemano/blindcode-navigator'
+abstract: >-
+  A Visual Studio Code extension that makes the structure of Java
+  source code audible for blind novice programmers. It separates
+  movement along a nesting level from movement across levels,
+  announces the surrounding scope in speech, and maps nesting
+  depth to pitch. Developed and evaluated as part of a bachelor's
+  thesis on structure-oriented audio navigation.
+keywords:
+  - accessibility
+  - screen-reader
+  - sonification
+  - program-comprehension
+  - computing-education
+  - vscode-extension
+  - tree-sitter
+  - java
