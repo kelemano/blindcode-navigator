@@ -34,6 +34,25 @@ export interface NavServices {
  *   Alt+L readCurrentLine (rohe Code-Zeile vorlesen)
  */
 
+/**
+ * Rückmeldung auf einen Tastendruck, der nichts bewegt hat.
+ *
+ * Im rein auditiven Zugang ist Stille die einzige Rückmeldung, die sich nicht
+ * deuten lässt: Sie ist von einer nicht angekommenen Taste, einem abgestürzten
+ * Werkzeug und einem verstummten Screenreader nicht zu unterscheiden. Eine
+ * Benachrichtigung von VS Code genügt dafür nicht — sie erscheint sichtbar, wird
+ * aber nicht vorgelesen, solange der Fokus im Editor bleibt. Die Meldung läuft
+ * deshalb zusätzlich über die Sprachausgabe.
+ *
+ * Bewusst über announceRaw und damit auch im Sprach-Modus `off`: Wer stumm
+ * navigiert, braucht die Auskunft über eine Ebenengrenze erst recht, weil ihm
+ * der Ton allein nicht sagt, ob die Taste wirkungslos war oder nicht ankam.
+ */
+function meldeOhneWirkung(services: NavServices, text: string): void {
+    services.speech.announceRaw(text);
+    vscode.window.showInformationMessage(text);
+}
+
 /** Outline-Knoten an der aktuellen Cursorposition (oder null). */
 export function outlineNodeAtCursor(editor: vscode.TextEditor): OutlineNode | null {
     return outlineAndCurrent(editor).current;
@@ -84,12 +103,12 @@ function go(
 ): void {
     const located = locate(editor);
     if (!located) {
-        vscode.window.showInformationMessage('Keine Code-Struktur an dieser Position');
+        meldeOhneWirkung(services, 'Keine Code-Struktur an dieser Position');
         return;
     }
     const target = pick(located.outline, located.node);
     if (!target) {
-        vscode.window.showInformationMessage(edgeMessage);
+        meldeOhneWirkung(services, edgeMessage);
         return;
     }
     moveToNode(editor, target);
@@ -120,7 +139,7 @@ export function navigateOut(editor: vscode.TextEditor, services: NavServices): v
 export function navigateIn(editor: vscode.TextEditor, services: NavServices): void {
     const located = locate(editor);
     if (!located) {
-        vscode.window.showInformationMessage('Keine Code-Struktur an dieser Position');
+        meldeOhneWirkung(services, 'Keine Code-Struktur an dieser Position');
         return;
     }
     const target = navIn(located.node);
@@ -139,7 +158,7 @@ export function navigateIn(editor: vscode.TextEditor, services: NavServices): vo
 export function readCurrentLine(editor: vscode.TextEditor, services: NavServices): void {
     const located = locate(editor);
     if (!located) {
-        vscode.window.showInformationMessage('Keine Code-Struktur an dieser Position');
+        meldeOhneWirkung(services, 'Keine Code-Struktur an dieser Position');
         return;
     }
     const row = located.node.astNode.startPosition.row;
@@ -163,7 +182,7 @@ export function showOutline(editor: vscode.TextEditor, services: NavServices): v
     const tree = getAST(editor.document);
     const outline = buildOutline(tree.rootNode);
     if (outline.linear.length === 0) {
-        vscode.window.showInformationMessage('Keine Code-Struktur in dieser Datei');
+        meldeOhneWirkung(services, 'Keine Code-Struktur in dieser Datei');
         return;
     }
     const allItems: OutlineQuickPickItem[] = outline.linear.map(node => ({

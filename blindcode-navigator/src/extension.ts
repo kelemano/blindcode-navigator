@@ -386,13 +386,14 @@ export function activate(context: vscode.ExtensionContext) {
                 .update('enabled', on, vscode.ConfigurationTarget.Global)
                 .then(() => {
                     applyCondition();
-                    if (on && !conditionManager.isEnabled('sonification')) {
-                        vscode.window.showInformationMessage(
-                            `Sonifikation aktiviert, aber in Bedingung ${conditionManager.current} inaktiv.`
-                        );
-                    } else {
-                        vscode.window.showInformationMessage(`Sonifikation ${on ? 'an' : 'aus'}`);
-                    }
+                    // Der neue Zustand sagt sich selbst an. Ohne Ansage wäre bei
+                    // „aus" nicht zu unterscheiden, ob die Taste gewirkt hat oder
+                    // ob die Tonausgabe ausgefallen ist.
+                    const hinweis = on && !conditionManager.isEnabled('sonification')
+                        ? `Sonifikation aktiviert, aber in Bedingung ${conditionManager.current} inaktiv.`
+                        : `Sonifikation ${on ? 'an' : 'aus'}`;
+                    speech.announceRaw(hinweis);
+                    vscode.window.showInformationMessage(hinweis);
                 });
         }),
         vscode.commands.registerCommand('blindcode-navigator.setStudyCondition', async () => {
@@ -527,7 +528,12 @@ export function activate(context: vscode.ExtensionContext) {
             if (!editor || editor.document.languageId !== 'java') { return; }
             const { current } = outlineAndCurrent(editor);
             if (!current) {
-                vscode.window.showInformationMessage('Keine Code-Struktur an dieser Position');
+                // Auch diese Auskunft muss hörbar sein: Alt+W wird gerade dann
+                // gedrückt, wenn jemand nicht weiß, wo er steht. Eine stumme
+                // Benachrichtigung ließe ihn ohne jede Antwort zurück.
+                const hinweis = 'Keine Code-Struktur an dieser Position';
+                speech.announceRaw(hinweis);
+                vscode.window.showInformationMessage(hinweis);
                 return;
             }
             // Zweite Sonifikations-Abbildung: die ABSOLUTE Tiefe als Anzahl Klicks
