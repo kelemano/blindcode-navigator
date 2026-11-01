@@ -4,6 +4,7 @@
   "description": "Strukturorientierte Audio-Navigation und Sonifikation für blinde Java-Anfänger:innen.",
   "version": "0.1.0",
   "publisher": "blindcode",
+  "icon": "resources/icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -43,7 +44,11 @@
       "properties": {
         "blindcode.studyCondition": {
           "type": "string",
-          "enum": ["A", "B", "C"],
+          "enum": [
+            "A",
+            "B",
+            "C"
+          ],
           "enumDescriptions": [
             "A — Kontrolle: Extension aus (nur Screenreader).",
             "B — Navigation + Kontext-Sprachausgabe, ohne Sonifikation.",
@@ -52,35 +57,73 @@
           "default": "C",
           "description": "Studienbedingung (A/B/C). Schaltet die Funktionen je Bedingung für die Vergleichsstudie."
         },
+        "blindcode.studyMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Sitzungsmodus für die Studie. Sperrt die Tasten, mit denen sich die untersuchten Größen selbst verstellen ließen: Alt+S (Ton) und Alt+M (Sprach-Ausführlichkeit). Drückt eine Testperson versehentlich Alt+S, säße sie sonst faktisch in Bedingung B, während das Protokoll C behauptet. Die Versuchsleitung stellt beides weiterhin über die Einstellungen um — gesperrt sind nur die Tastenkürzel. Bewusst getrennt von „studyCondition\", weil deren Standardwert C zugleich den normalen Funktionsumfang des Produkts meint."
+        },
         "blindcode.speech.verbosity": {
           "type": "string",
-          "enum": ["high", "medium", "low"],
+          "enum": [
+            "high",
+            "medium",
+            "low",
+            "off"
+          ],
           "enumDescriptions": [
             "Volle Skopus-Kette (Standard): z. B. „return-Anweisung, im Sonst-Zweig, in Methode calculate, Klasse MathLogic\".",
             "Nur Anker-Skopusse (Methode/Klasse), ohne Zwischenstrukturen: „return-Anweisung, in Methode calculate, Klasse MathLogic\". Kürzer bei tiefer Verschachtelung.",
-            "Nur der Knoten selbst: „return-Anweisung\"."
+            "Nur der Knoten selbst: „return-Anweisung\".",
+            "Automatische Ansagen aus — Navigation allein nach Gehör. Alt+W („Wo bin ich?\") und Alt+L (Zeile vorlesen) sprechen weiterhin, man kann sich also nicht verlieren."
           ],
           "default": "high",
-          "description": "Wie ausführlich die Kontext-Sprachausgabe den Pfad nennt."
+          "description": "Wie ausführlich die Kontext-Sprachausgabe den Pfad nennt. Zur Laufzeit mit Alt+M durchschaltbar."
+        },
+        "blindcode.highlightCurrentNode": {
+          "type": "boolean",
+          "default": true,
+          "description": "Den aktuellen Struktur-Knoten im Code sichtbar markieren. Reine Sehhilfe für Tutor:innen, Versuchsleitung und Vorführungen — wer sieht, erkennt sonst nur den springenden Cursor, nicht den Umfang des Knotens. Ohne jede Wirkung auf Sprache und Ton; in Studienbedingung A immer aus."
+        },
+        "blindcode.startSignal": {
+          "type": "string",
+          "enum": [
+            "earcon",
+            "speech",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Kurzes Status-Earcon (zwei Noten aufwärts, 440→660 Hz, ca. 0,2 s). Standard: kurz, kollidiert kaum mit dem Screenreader. Kein Teil der Sonifikation — kommt daher in Bedingung B UND C (macOS).",
+            "Gesprochener Satz „BlindCode Navigator aktiv, Bedingung B\". Eindeutig, fällt aber mit dem Vorlesen der frisch geöffneten Datei zusammen (zwei Sprachquellen).",
+            "Keine hörbare Rückmeldung beim Aktivieren."
+          ],
+          "default": "earcon",
+          "description": "Hörbare Bestätigung beim Öffnen einer Java-Datei, dass die Extension aktiv ist. Sehende erkennen das an der Statusleiste — blinde Nutzer:innen hätten sonst kein Signal. In Studienbedingung A entfällt das Signal immer."
         },
         "blindcode.speechMechanism": {
           "type": "string",
-          "enum": ["ariaLive", "notification"],
+          "enum": [
+            "ariaLive",
+            "notification"
+          ],
           "enumDescriptions": [
-            "Verstecktes Webview mit aria-live-Region (Standard, nicht aufdringlich).",
+            "Webview mit aria-live-Region (Standard, nicht aufdringlich). Das Panel ist sichtbar, nimmt aber nie den Fokus.",
             "Benachrichtigung via showInformationMessage (garantierter Fallback, aufdringlich)."
           ],
           "default": "ariaLive",
           "description": "Wie die Kontext-Sprachausgabe an den Screenreader übergeben wird."
         },
-        "blindcode.sonification": {
+        "blindcode.sonification.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Sonifikation: Verschachtelungstiefe als Tonhöhe bei der Navigation (FF2). In Studienbedingung B aus, in C an."
+          "description": "Sonifikation: Verschachtelungstiefe als Tonhöhe bei der Navigation (FF2). In Studienbedingung B aus, in C an. Hinweis: Die Tonausgabe nutzt den macOS-Player afplay und bleibt auf Windows/Linux still."
         },
         "blindcode.sonification.depthMode": {
           "type": "string",
-          "enum": ["control", "control-and-methods", "full-scope"],
+          "enum": [
+            "control",
+            "control-and-methods",
+            "full-scope"
+          ],
           "enumDescriptions": [
             "Nur Kontroll-Verschachtelung: zählt jeden Knoten als Ebene, OHNE Klasse/Methode und OHNE then/else-Zweige (Standard; MathLogic: if=1, for=2, inneres if=3, println=4).",
             "Wie control, aber die Methode zählt mit (alles +1; println=5).",
@@ -91,7 +134,9 @@
         },
         "blindcode.sonification.customDepthNodeTypes": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Optional (Profi): Wenn nicht leer, überschreibt depthMode — nur diese tree-sitter-Knotentypen erhöhen die Tiefe, z. B. [\"if_statement\",\"for_statement\",\"while_statement\",\"method_declaration\"]."
         }
@@ -99,24 +144,24 @@
     },
     "commands": [
       {
-        "command": "blindcode-navigator.helloWorld",
-        "title": "Hello World"
-      },
-      {
-        "command": "blindcode-navigator.navigateDown",
-        "title": "BCNav: Nächster Knoten (Lesereihenfolge)"
-      },
-      {
-        "command": "blindcode-navigator.navigateUp",
-        "title": "BCNav: Vorheriger Knoten (Lesereihenfolge)"
-      },
-      {
         "command": "blindcode-navigator.navigateNextSibling",
-        "title": "BCNav: Nächstes Geschwister (Block überspringen)"
+        "title": "BCNav: Nächstes Geschwister (gleiche Ebene)"
+      },
+      {
+        "command": "blindcode-navigator.navigatePrevSibling",
+        "title": "BCNav: Vorheriges Geschwister (gleiche Ebene)"
+      },
+      {
+        "command": "blindcode-navigator.navigateIn",
+        "title": "BCNav: Eine Ebene hinein (Inhalt ansagen)"
       },
       {
         "command": "blindcode-navigator.navigateOut",
         "title": "BCNav: Eine Ebene heraus"
+      },
+      {
+        "command": "blindcode-navigator.readLine",
+        "title": "BCNav: Aktuelle Code-Zeile vorlesen"
       },
       {
         "command": "blindcode-navigator.showOutline",
@@ -124,7 +169,7 @@
       },
       {
         "command": "blindcode-navigator.showTree",
-        "title": "BCNav: Baumansicht anzeigen (Visualisierung/Debug)"
+        "title": "BCNav: Baumansicht anzeigen (nur Tutor:in/Versuchsleitung)"
       },
       {
         "command": "blindcode-navigator.toggleSonification",
@@ -137,21 +182,37 @@
       {
         "command": "blindcode-navigator.whereAmI",
         "title": "BCNav: Wo bin ich? (aktuellen Pfad vorlesen)"
+      },
+      {
+        "command": "blindcode-navigator.cycleSpeechMode",
+        "title": "BCNav: Sprach-Ausführlichkeit umschalten (volle Kette / Methode+Klasse / nur Element / aus)"
+      },
+      {
+        "command": "blindcode-navigator.exportTrace",
+        "title": "BCNav: Navigationsspur als CSV sichern (Versuchsleitung)"
+      },
+      {
+        "command": "blindcode-navigator.resetTrace",
+        "title": "BCNav: Navigationsspur zurücksetzen (nächste:r Proband:in)"
+      },
+      {
+        "command": "blindcode-navigator.focusCode",
+        "title": "BCNav: Fokus zurück in den Code"
       }
     ],
     "keybindings": [
       {
-        "command": "blindcode-navigator.navigateDown",
+        "command": "blindcode-navigator.navigateNextSibling",
         "key": "alt+down",
         "when": "editorTextFocus && editorLangId == 'java'"
       },
       {
-        "command": "blindcode-navigator.navigateUp",
+        "command": "blindcode-navigator.navigatePrevSibling",
         "key": "alt+up",
         "when": "editorTextFocus && editorLangId == 'java'"
       },
       {
-        "command": "blindcode-navigator.navigateNextSibling",
+        "command": "blindcode-navigator.navigateIn",
         "key": "alt+right",
         "when": "editorTextFocus && editorLangId == 'java'"
       },
@@ -161,13 +222,13 @@
         "when": "editorTextFocus && editorLangId == 'java'"
       },
       {
-        "command": "blindcode-navigator.showOutline",
-        "key": "alt+o",
+        "command": "blindcode-navigator.readLine",
+        "key": "alt+l",
         "when": "editorTextFocus && editorLangId == 'java'"
       },
       {
-        "command": "blindcode-navigator.showTree",
-        "key": "alt+t",
+        "command": "blindcode-navigator.showOutline",
+        "key": "alt+o",
         "when": "editorTextFocus && editorLangId == 'java'"
       },
       {
@@ -179,6 +240,51 @@
         "command": "blindcode-navigator.whereAmI",
         "key": "alt+w",
         "when": "editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.cycleSpeechMode",
+        "key": "alt+m",
+        "when": "editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.focusCode",
+        "key": "alt+down",
+        "when": "!editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.focusCode",
+        "key": "alt+up",
+        "when": "!editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.focusCode",
+        "key": "alt+right",
+        "when": "!editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.focusCode",
+        "key": "alt+left",
+        "when": "!editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.focusCode",
+        "key": "alt+w",
+        "when": "!editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.focusCode",
+        "key": "alt+l",
+        "when": "!editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.focusCode",
+        "key": "alt+s",
+        "when": "!editorTextFocus && editorLangId == 'java'"
+      },
+      {
+        "command": "blindcode-navigator.focusCode",
+        "key": "alt+m",
+        "when": "!editorTextFocus && editorLangId == 'java'"
       }
     ]
   },
