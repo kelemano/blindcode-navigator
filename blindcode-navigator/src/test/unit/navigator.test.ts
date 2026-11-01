@@ -8,6 +8,7 @@ import {
     navIn,
     navOut,
     navNextSibling,
+    navPrevSibling,
     resolveNeighbours,
     Outline,
     OutlineNode,
@@ -67,7 +68,7 @@ suite('navigator — Outline-Modell (StructJumper-Gliederung)', () => {
         ]);
     });
 
-    suite('Alt+↓ / Alt+↑ sind echte Inverse (Lesereihenfolge)', () => {
+    suite('Lesereihenfolge: navDown/navUp sind echte Inverse (an keine Taste gebunden)', () => {
         test('Down-dann-Up führt überall zum Ausgangsknoten zurück', () => {
             for (const node of outline.linear) {
                 const down = navDown(outline, node);
@@ -142,7 +143,7 @@ suite('navigator — Outline-Modell (StructJumper-Gliederung)', () => {
         });
     });
 
-    suite('Alt+→ navNextSibling (Block überspringen)', () => {
+    suite('Alt+↓ navNextSibling (nächstes Geschwister, Block überspringen)', () => {
         test('Dann-Zweig → Sonst-Zweig (then → else in einer Taste)', () => {
             assert.strictEqual(navNextSibling(outline, at('then-branch', 3))?.kind, 'else-branch');
         });
@@ -159,28 +160,50 @@ suite('navigator — Outline-Modell (StructJumper-Gliederung)', () => {
         });
     });
 
-    suite('resolveNeighbours (Richtungsziele für die Baumansicht)', () => {
-        test('für das äußere if: up/down/sibling/parent korrekt', () => {
+    suite('Alt+↑ navPrevSibling (vorheriges Geschwister auf der Ebene)', () => {
+        test('Sonst-Zweig → Dann-Zweig (Umkehrung von navNextSibling)', () => {
+            assert.strictEqual(navPrevSibling(outline, at('else-branch', 9))?.kind, 'then-branch');
+        });
+        test('return x → äußere if-Anweisung (rückwärts über der Methode)', () => {
+            assert.strictEqual(navPrevSibling(outline, at('return', 12))?.kind, 'if');
+        });
+        test('inverse zu navNextSibling für alle Knoten mit nächstem Geschwister', () => {
+            for (const node of outline.linear) {
+                const next = navNextSibling(outline, node);
+                if (next) {
+                    assert.strictEqual(navPrevSibling(outline, next)?.index, node.index);
+                }
+            }
+        });
+        test('Edge: erstes Geschwister hat kein vorheriges', () => {
+            assert.strictEqual(navPrevSibling(outline, at('then-branch', 3)), null);
+            assert.strictEqual(navPrevSibling(outline, first('class')), null);
+        });
+    });
+
+    suite('resolveNeighbours (Richtungsziele für die Baumansicht, Ebenen-Modell)', () => {
+        test('für das äußere if: up/down = Geschwister, child = hinein, parent = heraus', () => {
             const n = resolveNeighbours(outline, at('if', 3));
-            assert.strictEqual(n.up?.kind, 'method');        // Alt+↑ vorheriger in Lesereihenfolge
-            assert.strictEqual(n.down?.kind, 'then-branch');  // Alt+↓ nächster in Lesereihenfolge
-            assert.strictEqual(n.sibling?.kind, 'return');    // Alt+→ nächstes Geschwister (return x)
-            assert.strictEqual(n.parent?.kind, 'method');     // Alt+← Elternknoten
+            assert.strictEqual(n.up, null);                   // Alt+↑ kein vorheriges Geschwister (erstes)
+            assert.strictEqual(n.down?.kind, 'return');       // Alt+↓ nächstes Geschwister (return x)
+            assert.strictEqual(n.child?.kind, 'then-branch'); // Alt+→ eine Ebene hinein
+            assert.strictEqual(n.parent?.kind, 'method');     // Alt+← eine Ebene heraus
         });
 
-        test('für println: kein Geschwister; down zeigt in den else-Zweig', () => {
+        test('für println (Blatt): keine Geschwister, kein Kind; parent = Dann-Zweig', () => {
             const n = resolveNeighbours(outline, first('statement'));
-            assert.strictEqual(n.down?.kind, 'else-branch');
-            assert.strictEqual(n.sibling, null);
+            assert.strictEqual(n.up, null);
+            assert.strictEqual(n.down, null);
+            assert.strictEqual(n.child, null);
             assert.strictEqual(n.parent?.kind, 'then-branch');
         });
 
-        test('für die Wurzel (class): kein up, kein sibling, kein parent', () => {
+        test('für die Wurzel (class): keine Geschwister, kein parent; child = Methode', () => {
             const n = resolveNeighbours(outline, first('class'));
             assert.strictEqual(n.up, null);
-            assert.strictEqual(n.sibling, null);
+            assert.strictEqual(n.down, null);
             assert.strictEqual(n.parent, null);
-            assert.strictEqual(n.down?.kind, 'method');
+            assert.strictEqual(n.child?.kind, 'method');
         });
     });
 
@@ -234,6 +257,72 @@ suite('navigator — Outline-Modell (StructJumper-Gliederung)', () => {
                 const down = navDown(o, n);
                 if (down) {
                     assert.strictEqual(navUp(o, down)?.index, n.index);
+                }
+            }
+        });
+
+        // Die Prüfung darüber deckt navDown/navUp ab — die LINEAREN Operationen, die
+        // seit dem Wechsel zum Ebenenmodell an keine Taste mehr gebunden sind. Die
+        // Zusage aus Abschnitt 4.3 der Arbeit gilt aber den TASTEN, und zwar
+        // ausdrücklich auch für fehlerhaften Quelltext. Genau das prüfen die beiden
+        // folgenden Tests, über beide Arten von Schadstelle hinweg.
+        // Bewusst STRUKTURREICHE Fixtures: Feld, zwei Methoden, Verzweigung bzw.
+        // Schleife. Die minimalen Beispiele oben haben zu wenige Geschwister, als
+        // dass eine Prüfung der Geschwister-Umkehrung etwas beweisen würde.
+        const KAPUTTE_QUELLEN = [
+            // MISSING: fehlendes ';' im Dann-Zweig
+            'class A {\n int f;\n void m(){\n  if (f > 0) {\n   int x = 5\n  } else {\n'
+            + '   int y = 1;\n  }\n }\n void n(){\n  int z = 2;\n }\n}',
+            // ERROR: unparsbarer Abschnitt im Schleifenrumpf
+            'class A {\n int f;\n void m(){\n  for (int i = 0; i < 3; i++) {\n   @@@\n'
+            + '   int y = 1;\n  }\n }\n void n(){\n  int z = 2;\n }\n}',
+        ];
+
+        /**
+         * Stellt sicher, dass die Fixture wirklich eine Schadstelle UND genug Struktur
+         * enthält — sonst liefe die Schleife darunter ins Leere und der Test wäre
+         * grün, ohne etwas zu prüfen.
+         */
+        function kaputtesOutline(src: string, mindestGeschwister = 2): Outline {
+            const o = buildOutline(parseJava(src).rootNode);
+            assert.ok(
+                o.linear.some(n => n.kind === 'error' || n.kind === 'missing'),
+                'Fixture enthält keine error/missing-Knoten — der Test wäre wirkungslos',
+            );
+            const paare = o.linear.filter(n => navNextSibling(o, n) !== null).length;
+            assert.ok(
+                paare >= mindestGeschwister,
+                `Fixture hat nur ${paare} Geschwister-Paare — zu wenig, um etwas zu zeigen`,
+            );
+            return o;
+        }
+
+        test('Alt+↓ / Alt+↑ sind auch im kaputten Baum echte Inverse', () => {
+            for (const src of KAPUTTE_QUELLEN) {
+                const o = kaputtesOutline(src);
+                for (const n of o.linear) {
+                    const next = navNextSibling(o, n);
+                    if (next) {
+                        assert.strictEqual(
+                            navPrevSibling(o, next)?.index, n.index,
+                            `navPrevSibling(navNextSibling(${n.kind})) trifft nicht zurück`,
+                        );
+                    }
+                }
+            }
+        });
+
+        test('Alt+→ / Alt+← sind auch im kaputten Baum echte Inverse', () => {
+            for (const src of KAPUTTE_QUELLEN) {
+                const o = kaputtesOutline(src);
+                for (const n of o.linear) {
+                    const inner = navIn(n);
+                    if (inner) {
+                        assert.strictEqual(
+                            navOut(inner)?.index, n.index,
+                            `navOut(navIn(${n.kind})) trifft nicht zurück`,
+                        );
+                    }
                 }
             }
         });

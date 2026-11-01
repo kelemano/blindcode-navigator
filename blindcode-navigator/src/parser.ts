@@ -22,7 +22,13 @@ export function getAST(document: vscode.TextDocument): Parser.Tree {
         return cached.tree;
     }
     const text = document.getText();
-    const tree = parser.parse(text, cached?.tree);
+    // Vollständiges Neu-Parsen (kein inkrementelles Wiederverwenden des alten Baums):
+    // tree-sitter setzt für inkrementelles Parsen voraus, dass auf dem alten Baum
+    // vorher tree.edit(...) für jede Änderung aufgerufen wurde. Da wir das nicht
+    // verfolgen, würde ein übergebener alter Baum nach Edits einen TEILWEISE FALSCHEN
+    // Baum liefern. Die Java-Dateien sind klein → ein voller Parse ist vernachlässigbar
+    // und immer korrekt. Der versionsbasierte Cache oben verhindert unnötiges Neu-Parsen.
+    const tree = parser.parse(text);
     treeCache.set(uri, { tree, version: document.version });
     return tree;
 }

@@ -4,14 +4,15 @@ import {
     buildOutline,
     outlineNodeFor,
     outlineDepth,
-    navDown,
-    navUp,
+    navIn,
     navNextSibling,
+    navPrevSibling,
     navOut,
     Outline,
     OutlineNode,
+    NavMovement,
 } from './navigator';
-import { describeOutlineNode, outlineMatches } from './contextSpeech';
+import { describeOutlineNode, outlineMatches, buildEntryAnnouncement } from './contextSpeech';
 import type { SpeechController } from './speech';
 import type { SonificationController } from './sonificationPlayer';
 
@@ -26,10 +27,11 @@ export interface NavServices {
  * Outline-Baum (klein, < 500 LOC → vernachlässigbar), findet den Knoten an der
  * Cursorposition, wendet die Richtung an, bewegt den Cursor und spricht den Kontext.
  *
- * Tastenmodell (Variante 3):
- *   Alt+↓ navigateDown · Alt+↑ navigateUp  (Lesereihenfolge)
- *   Alt+→ navigateNextSibling (Block überspringen) · Alt+← navigateOut (heraus)
+ * Tastenmodell (Ebenen-Modell „Überblick → Eintauchen"):
+ *   Alt+↑ navigatePrevSibling · Alt+↓ navigateNextSibling  (Geschwister auf dieser Ebene)
+ *   Alt+→ navigateIn (eine Ebene hinein + Inhalt ansagen) · Alt+← navigateOut (heraus)
  *   Alt+O showOutline (Gliederungs-Liste → frei zu jedem Knoten springen)
+ *   Alt+L readCurrentLine (rohe Code-Zeile vorlesen)
  */
 
 /** Outline-Knoten an der aktuellen Cursorposition (oder null). */
@@ -68,16 +70,17 @@ function moveToNode(editor: vscode.TextEditor, node: OutlineNode): void {
 }
 
 /** Löst Sprache + Sonifikation auf dem Zielknoten aus (onNavigate). */
-function announce(services: NavServices, target: OutlineNode): void {
+function announce(services: NavServices, target: OutlineNode, movement: NavMovement): void {
     services.speech.announce(target);
-    services.sonification.play(target);
+    services.sonification.play(target, movement);
 }
 
 function go(
     editor: vscode.TextEditor,
     services: NavServices,
     pick: (outline: Outline, node: OutlineNode) => OutlineNode | null,
-    edgeMessage: string
+    edgeMessage: string,
+    movement: NavMovement
 ): void {
     const located = locate(editor);
     if (!located) {
@@ -90,27 +93,58 @@ function go(
         return;
     }
     moveToNode(editor, target);
-    announce(services, target);
+    announce(services, target, movement);
 }
 
-/** Alt+↓ — nächster Knoten in Lesereihenfolge. */
-export function navigateDown(editor: vscode.TextEditor, services: NavServices): void {
-    go(editor, services, (outline, node) => navDown(outline, node), 'Ende des Codes erreicht');
-}
-
-/** Alt+↑ — vorheriger Knoten in Lesereihenfolge. */
-export function navigateUp(editor: vscode.TextEditor, services: NavServices): void {
-    go(editor, services, (outline, node) => navUp(outline, node), 'Anfang des Codes erreicht');
-}
-
-/** Alt+→ — nächstes Geschwister (Block überspringen). */
+/** Alt+↓ — nächstes Geschwister auf dieser Ebene. */
 export function navigateNextSibling(editor: vscode.TextEditor, services: NavServices): void {
-    go(editor, services, (outline, node) => navNextSibling(outline, node), 'Kein weiterer Knoten auf dieser Ebene');
+    go(editor, services, (outline, node) => navNextSibling(outline, node), 'Letzter Knoten auf dieser Ebene', 'next');
+}
+
+/** Alt+↑ — vorheriges Geschwister auf dieser Ebene. */
+export function navigatePrevSibling(editor: vscode.TextEditor, services: NavServices): void {
+    go(editor, services, (outline, node) => navPrevSibling(outline, node), 'Erster Knoten auf dieser Ebene', 'prev');
 }
 
 /** Alt+← — eine Ebene heraus (Elternknoten). */
 export function navigateOut(editor: vscode.TextEditor, services: NavServices): void {
-    go(editor, services, (_outline, node) => navOut(node), 'Oberste Ebene erreicht');
+    go(editor, services, (_outline, node) => navOut(node), 'Oberste Ebene erreicht', 'out');
+}
+
+/**
+ * Alt+→ — eine Ebene HINEIN (erstes Kind). Statt der normalen Knoten-Ansage wird
+ * die betretene Ebene benannt und ihr Inhalt aufgezählt („Methode calculate
+ * betreten, 2 Elemente: …"). Auf einem Blatt bleibt der Cursor stehen und es kommt
+ * „… hat keine tiefere Ebene".
+ */
+export function navigateIn(editor: vscode.TextEditor, services: NavServices): void {
+    const located = locate(editor);
+    if (!located) {
+        vscode.window.showInformationMessage('Keine Code-Struktur an dieser Position');
+        return;
+    }
+    const target = navIn(located.node);
+    if (!target) {
+        // Blatt: keine tiefere Ebene — nur ansagen, nicht bewegen.
+        services.speech.announceMessage(buildEntryAnnouncement(located.node), located.node);
+        return;
+    }
+    moveToNode(editor, target);
+    // Eintauch-Ansage bezieht sich auf den betretenen (Eltern-)Knoten.
+    services.speech.announceMessage(buildEntryAnnouncement(located.node), target);
+    services.sonification.play(target, 'in');
+}
+
+/** Alt+L — liest die rohe Quelltextzeile des aktuellen Knotens vor (genau eine Zeile). */
+export function readCurrentLine(editor: vscode.TextEditor, services: NavServices): void {
+    const located = locate(editor);
+    if (!located) {
+        vscode.window.showInformationMessage('Keine Code-Struktur an dieser Position');
+        return;
+    }
+    const row = located.node.astNode.startPosition.row;
+    const line = editor.document.lineAt(row).text.trim();
+    services.speech.announceRaw(line.length > 0 ? line : '(leere Zeile)');
 }
 
 interface OutlineQuickPickItem extends vscode.QuickPickItem {
@@ -152,7 +186,7 @@ export function showOutline(editor: vscode.TextEditor, services: NavServices): v
         const selected = quickPick.selectedItems[0];
         if (selected) {
             moveToNode(editor, selected.node);
-            announce(services, selected.node);
+            announce(services, selected.node, 'jump');
         }
         quickPick.hide();
     });

@@ -7,10 +7,13 @@ import type Parser = require('tree-sitter');
  * Knoten. Dieser Baum treibt sowohl die Navigation als auch (über contextSpeech) die
  * Sprachausgabe — „was man navigiert" = „was man hört".
  *
- * Tastenmodell (StructJumper-Gliederung, Kap. 2.3):
- *   - Alt+↓ / Alt+↑ : nächster / vorheriger Knoten in LESEREIHENFOLGE (linearisierte
- *                     Vorordnung der Gliederung) — siehe navDown/navUp.
- *   - Alt+→ / Alt+← : eine Verschachtelungsebene HINEIN / HERAUS — siehe navIn/navOut.
+ * Tastenmodell (EBENEN-Modell „Überblick → Eintauchen", Kap. 4.2):
+ *   - Alt+↑ / Alt+↓ : vorheriges / nächstes GESCHWISTER auf derselben Ebene
+ *                     — siehe navPrevSibling/navNextSibling.
+ *   - Alt+→ : eine Ebene HINEIN (erstes Kind) — siehe navIn.
+ *   - Alt+← : eine Ebene HERAUS (Elternknoten) — siehe navOut.
+ *   Die linearen navDown/navUp bleiben als Baum-Operationen erhalten (Tests,
+ *   Gliederungs-Liste), liegen aber auf keiner Taste mehr.
  *
  * Aufbauregeln des Outline-Baums (siehe buildOutline):
  *   - Stopps sind nur bedeutungstragende Knoten (STOP_KINDS). Bedingungen, Ausdrücke,
@@ -30,6 +33,22 @@ export type OutlineKind =
     | 'variable' | 'statement' | 'lambda'
     // Fehlertoleranz: tree-sitter-Knoten für kaputten Code (FF/Robustheit).
     | 'error' | 'missing';
+
+/**
+ * Art der Bewegung, die zu einem Knoten geführt hat.
+ *
+ * Warum das die Sonifikation interessiert: Im EBENEN-Modell ändern `next`/`prev` die
+ * Tiefe NIE (Geschwister liegen per Definition auf derselben Ebene) — eine reine
+ * Tiefen-Abbildung schweigt dort also inhaltlich, obwohl sie klingt. Nur `in`/`out`
+ * verändern die Ebene. Damit eine Abbildung überhaupt auf die Bewegungsart reagieren
+ * KANN, muss die Sonifikations-Schicht sie kennen; sonst kann sie nur statische
+ * Eigenschaften des Zielknotens vertonen.
+ *
+ * Die aktuelle Abbildung (Tiefe → Tonhöhe) nutzt den Wert noch nicht — die Trennung
+ * „was ist passiert" / „wie klingt es" ist bewusst zuerst nur als Schnittstelle
+ * eingezogen, damit alternative Abbildungen später ohne Umbau erprobbar sind.
+ */
+export type NavMovement = 'in' | 'out' | 'next' | 'prev' | 'jump';
 
 export interface OutlineNode {
     /** AST-Knoten, auf den der Cursor gesetzt wird. */
@@ -249,7 +268,7 @@ function siblingsOf(outline: Outline, node: OutlineNode): OutlineNode[] {
     return node.parent ? node.parent.children : outline.linear.filter(n => !n.parent);
 }
 
-/** Alt+→ — nächstes Geschwister (überspringt den ganzen Block des aktuellen Knotens). */
+/** Alt+↓ — nächstes Geschwister auf derselben Ebene (überspringt den ganzen Block). */
 export function navNextSibling(outline: Outline, node: OutlineNode): OutlineNode | null {
     const siblings = siblingsOf(outline, node);
     const index = siblings.indexOf(node);
@@ -257,17 +276,25 @@ export function navNextSibling(outline: Outline, node: OutlineNode): OutlineNode
     return siblings[index + 1] ?? null;
 }
 
+/** Alt+↑ — vorheriges Geschwister auf derselben Ebene. */
+export function navPrevSibling(outline: Outline, node: OutlineNode): OutlineNode | null {
+    const siblings = siblingsOf(outline, node);
+    const index = siblings.indexOf(node);
+    if (index === -1) { return null; }
+    return siblings[index - 1] ?? null;
+}
+
 /**
  * Die vier Richtungs-Nachbarn eines Knotens (für die visuelle Baumansicht).
  * Bündelt genau die Funktionen, die auch die Tasten ausführen.
  */
 export interface Neighbours {
-    /** Alt+↑ — vorheriger Knoten in Lesereihenfolge. */
+    /** Alt+↑ — vorheriges Geschwister auf dieser Ebene. */
     up: OutlineNode | null;
-    /** Alt+↓ — nächster Knoten in Lesereihenfolge. */
+    /** Alt+↓ — nächstes Geschwister auf dieser Ebene. */
     down: OutlineNode | null;
-    /** Alt+→ — nächstes Geschwister. */
-    sibling: OutlineNode | null;
+    /** Alt+→ — eine Ebene hinein (erstes Kind). */
+    child: OutlineNode | null;
     /** Alt+← — Elternknoten. */
     parent: OutlineNode | null;
 }
@@ -275,9 +302,9 @@ export interface Neighbours {
 /** Löst für einen Knoten alle vier Richtungsziele auf (wiederverwendet die nav-Funktionen). */
 export function resolveNeighbours(outline: Outline, node: OutlineNode): Neighbours {
     return {
-        up: navUp(outline, node),
-        down: navDown(outline, node),
-        sibling: navNextSibling(outline, node),
+        up: navPrevSibling(outline, node),
+        down: navNextSibling(outline, node),
+        child: navIn(node),
         parent: navOut(node),
     };
 }
