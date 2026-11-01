@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
-import { Outline, OutlineNode, outlineDepth, resolveNeighbours } from './navigator';
-import { describeOutlineNode } from './contextSpeech';
+import { Outline, OutlineNode } from './navigator';
+import { SonificationDepthConfig } from './sonification';
+import { buildTreeData, TreeItemData } from './treeData';
+
+export { buildTreeData } from './treeData';
 
 /**
  * Visuelle Baumansicht (Kap. 4 — Visualisierungs-/Debug-Hilfe, KEIN Kernfeature
@@ -12,47 +15,6 @@ import { describeOutlineNode } from './contextSpeech';
  * Read-only: ändert keine bestehende Navigations-/Sprachlogik. Nutzt denselben
  * Outline-Baum wie Navigation und Sprache.
  */
-
-type Role = 'current' | 'up' | 'down' | 'sibling' | 'parent';
-
-interface TreeItemData {
-    depth: number;
-    label: string;
-    line: number;
-    row: number;
-    col: number;
-    roles: Role[];
-}
-
-/**
- * Baut die Render-Daten: Baum in Lesereihenfolge, plus die Rollen (aktueller Knoten
- * und die vier Richtungs-Nachbarn) je Knoten. Rein (kein VS Code) — testbar.
- */
-export function buildTreeData(outline: Outline, current: OutlineNode | null): TreeItemData[] {
-    const roles = new Map<number, Role[]>();
-    const tag = (node: OutlineNode | null | undefined, role: Role) => {
-        if (!node) { return; }
-        const list = roles.get(node.index) ?? [];
-        list.push(role);
-        roles.set(node.index, list);
-    };
-    if (current) {
-        const n = resolveNeighbours(outline, current);
-        tag(current, 'current');
-        tag(n.up, 'up');
-        tag(n.down, 'down');
-        tag(n.sibling, 'sibling');
-        tag(n.parent, 'parent');
-    }
-    return outline.linear.map(node => ({
-        depth: outlineDepth(node),
-        label: describeOutlineNode(node),
-        line: node.astNode.startPosition.row + 1,
-        row: node.astNode.startPosition.row,
-        col: node.astNode.startPosition.column,
-        roles: roles.get(node.index) ?? [],
-    }));
-}
 
 export class TreeViewProvider implements vscode.WebviewViewProvider {
     /** ID der View (siehe package.json contributes.views). */
@@ -80,8 +42,8 @@ export class TreeViewProvider implements vscode.WebviewViewProvider {
     }
 
     /** Aktualisiert die Darstellung (nur wenn die View existiert/sichtbar ist). */
-    update(outline: Outline, current: OutlineNode | null): void {
-        this.lastNodes = buildTreeData(outline, current);
+    update(outline: Outline, current: OutlineNode | null, depthConfig: SonificationDepthConfig): void {
+        this.lastNodes = buildTreeData(outline, current, depthConfig);
         this.post();
     }
 
@@ -117,28 +79,36 @@ export class TreeViewProvider implements vscode.WebviewViewProvider {
   .role-current { border-left-color: var(--vscode-foreground); border-left-width: 3px; }
   .role-up      { border-left-color: #2e9b3f; } .badge-up      { border-color:#2e9b3f; color:#2e9b3f; }
   .role-down    { border-left-color: #2f7fe0; } .badge-down    { border-color:#2f7fe0; color:#2f7fe0; }
-  .role-sibling { border-left-color: #d2a017; } .badge-sibling { border-color:#d2a017; color:#d2a017; }
+  .role-child   { border-left-color: #d2a017; } .badge-child   { border-color:#d2a017; color:#d2a017; }
   .role-parent  { border-left-color: #9b59c4; } .badge-parent  { border-color:#9b59c4; color:#9b59c4; }
   .badge-current { border-color: var(--vscode-foreground); }
+  .tone {
+    font-size: .8em; border-radius: 3px; padding: 0 5px;
+    border: 1px dashed var(--vscode-panel-border); color: var(--vscode-descriptionForeground);
+  }
   #empty { color: var(--vscode-descriptionForeground); }
+  #hint { color: var(--vscode-descriptionForeground); font-size: .85em; margin: 0 0 10px; }
 </style>
 </head>
 <body>
 <h2>BlindCode Baum (Visualisierung / Debug)</h2>
 <div id="legend">
-  <span class="chip role-up">↑ Alt+↑ vorheriger</span>
-  <span class="chip role-down">↓ Alt+↓ nächster</span>
-  <span class="chip role-sibling">→ Alt+→ Geschwister</span>
-  <span class="chip role-parent">← Alt+← Elternknoten</span>
+  <span class="chip role-up">↑ Alt+↑ vorh. Geschwister</span>
+  <span class="chip role-down">↓ Alt+↓ nächstes Geschwister</span>
+  <span class="chip role-child">→ Alt+→ eine Ebene hinein</span>
+  <span class="chip role-parent">← Alt+← eine Ebene heraus</span>
   <span class="chip role-current">● aktueller Knoten</span>
 </div>
+<p id="hint">Einrückung = Struktur-Tiefe · <span class="tone">♪ n</span> = Tiefe, die der Ton vertont
+(andere Projektion — Klasse/Methode und Zweige zählen im Standardmodus nicht mit).</p>
 <div id="tree"><p id="empty">Cursor in eine Java-Datei setzen …</p></div>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
-  const BADGE = { current: '● aktuell', up: '↑ vorher', down: '↓ nächster', sibling: '→ Geschwister', parent: '← Eltern' };
+  const BADGE = { current: '● aktuell', up: '↑ vorher', down: '↓ nächstes', child: '→ hinein', parent: '← heraus' };
   function render(nodes) {
     const tree = document.getElementById('tree');
     tree.textContent = '';
+    let current = null;
     if (!nodes.length) { tree.innerHTML = '<p id="empty">Keine Code-Struktur.</p>'; return; }
     for (const n of nodes) {
       const row = document.createElement('div');
@@ -157,6 +127,11 @@ export class TreeViewProvider implements vscode.WebviewViewProvider {
       line.className = 'line';
       line.textContent = 'Zeile ' + n.line;
       box.appendChild(line);
+      // Was der Ton vertont — bewusst getrennt von der Einrückung sichtbar.
+      const tone = document.createElement('span');
+      tone.className = 'tone';
+      tone.textContent = '♪ ' + n.toneDepth;
+      box.appendChild(tone);
       for (const r of n.roles) {
         const b = document.createElement('span');
         b.className = 'badge badge-' + r;
@@ -164,9 +139,13 @@ export class TreeViewProvider implements vscode.WebviewViewProvider {
         box.appendChild(b);
       }
       box.addEventListener('click', () => vscode.postMessage({ type: 'jump', row: n.row, col: n.col }));
+      if (n.roles.includes('current')) { current = box; }
       row.appendChild(box);
       tree.appendChild(row);
     }
+    // Der aktuelle Knoten muss sichtbar bleiben: Bei längeren Dateien liefe die
+    // Begleitung sonst der Markierung hinterher und müsste von Hand scrollen.
+    if (current) { current.scrollIntoView({ block: 'nearest' }); }
   }
   window.addEventListener('message', e => { if (e.data && e.data.type === 'render') { render(e.data.nodes); } });
   vscode.postMessage({ type: 'ready' });
